@@ -23,7 +23,7 @@ import 'providers/theme_provider.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Lock app to portrait orientation only (like Instagram)
+  // Lock app to portrait orientation only 
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
   ]);
