@@ -1,16 +1,46 @@
-# tiffin
+# 🍱 TiffinGO
 
-A new Flutter project.
+TiffinGO is a mobile application that helps users subscribe to daily tiffin services, manage meal plans, track remaining orders, and handle payments easily. The app digitalizes the traditional tiffin system using modern mobile and cloud technologies.
 
-## Getting Started
+---
 
-This project is a starting point for a Flutter application.
+## 🚀 Features
 
-A few resources to get you started if this is your first Flutter project:
+- User Login & Registration
+- Location-based tiffin services
+- Daily / Weekly / Monthly subscriptions
+- Meal plan selection (Normal / Medium / Premium)
+- Remaining meal tracking
+- Order history
+- Payment and pending amount tracking
+- OTP verification
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+---
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 🛠 Tech Stack
+
+- Flutter (Dart)
+- Firebase Authentication
+- Cloud Firestore
+- Provider (State Management)
+
+---
+
+## 📂 Project Structure
+
+lib/
+├── models/
+├── providers/
+├── screens/
+│ └── auth/
+├── main.dart
+
+---
+
+## ▶️ Run Project
+
+```bash
+git clone https://github.com/KhandlaMayur/TiffinGO.git
+cd TiffinGO
+flutter pub get
+flutter run
