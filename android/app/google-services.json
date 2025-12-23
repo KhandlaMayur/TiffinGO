@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1079111524284",
+    "project_id": "tiffingo-d313a",
+    "storage_bucket": "tiffingo-d313a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1079111524284:android:1dba2db1676275347f55b9",
+        "android_client_info": {
+          "package_name": "com.example.tiffin"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBg8LSoiSNWtXLzpfdk8gdzcYIArP9jpEA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

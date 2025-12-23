@@ -1,0 +1,37 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "tiffingo-d313a",
+          "appId": "1:1079111524284:android:1dba2db1676275347f55b9",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "tiffingo-d313a",
+          "configurations": {
+            "android": "1:1079111524284:android:1dba2db1676275347f55b9",
+            "ios": "1:1079111524284:ios:16f87b56be326c1a7f55b9",
+            "macos": "1:1079111524284:ios:16f87b56be326c1a7f55b9",
+            "web": "1:1079111524284:web:20b3797f41cb391d7f55b9",
+            "windows": "1:1079111524284:web:aca867fdc90b79867f55b9"
+          }
+        }
+      }
+    }
+  },
+  "emulators": {
+    "auth": {
+      "port": 9099
+    },
+    "firestore": {
+      "port": 8080
+    },
+    "ui": {
+      "enabled": true
+    },
+    "singleProjectMode": true
+  }
+}

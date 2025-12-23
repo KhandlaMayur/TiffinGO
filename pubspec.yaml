@@ -1,0 +1,69 @@
+name: tiffin
+description: "A Flutter app for Tiffin service delivery."
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.2
+  shared_preferences: ^2.2.2
+  geolocator: ^10.1.0
+  geocoding: ^2.1.1
+  http: ^1.1.0
+  provider: ^6.1.1
+  intl: ^0.19.0
+  google_maps_flutter: ^2.5.0
+  qr_flutter: ^4.1.0
+  url_launcher: ^6.1.10
+  flutter_map: ^5.0.0
+  webview_flutter: ^4.0.7
+  firebase_auth: ^6.1.2
+  cloud_firestore: ^6.1.0
+  firebase_analytics: ^12.0.4
+  firebase_messaging: ^16.0.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  flutter_launcher_icons: "^0.14.4"
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/surendranagar.jpg
+    - assets/images/rajkot.jpg
+    - assets/images/ahmedabad.jpg
+    - assets/images/kathiyavadi.jpg
+    - assets/images/desi_rotalo.jpg
+    - assets/images/nani.jpg
+    - assets/images/rajwadi.jpg
+    - assets/images/tiffine.jpg
+    - assets/images/icon.png
+
+# 👇 Configuration for flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/icon.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#ffffff"
+  adaptive_icon_foreground: "assets/images/icon.png"
+  web:
+    generate: true
+    image_path: "assets/images/icon.png"
+    background_color: "#ffffff"
+    theme_color: "#ffffff"
+  windows:
+    generate: true
+    image_path: "assets/images/icon.png"
+    icon_size: 48
+  macos:
+    generate: true
+    image_path: "assets/images/icon.png"
