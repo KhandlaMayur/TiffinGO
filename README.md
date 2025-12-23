@@ -35,11 +35,6 @@ Tiffin is built to let users browse meal plans, subscribe to recurring deliverie
 - Firebase Cloud Functions (Node.js) in `/functions`
 - Platform targets: Android, iOS, Web, Windows, macOS, Linux
 
-## Demo / Screenshots
-Add screenshots under `assets/images/` and reference them here. Example:
-- `assets/images/splash.png`
-- `assets/images/meal_list.png`
-- `assets/images/subscription.png`
 
 ## Getting Started
 
