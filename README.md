@@ -53,3 +53,7 @@ Add screenshots under `assets/images/` and reference them here. Example:
 ```bash
 git clone <repo-url>
 cd tiffin
+git clone https://github.com/KhandlaMayur/TiffinGO.git
+cd TiffinGO
+flutter pub get
+flutter run
