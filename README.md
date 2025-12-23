@@ -26,17 +26,6 @@ TiffinGO is a mobile application that helps users subscribe to daily tiffin serv
 
 ---
 
-## 📂 Project Structure
-
-lib/
-├── models/
-├── providers/
-├── screens/
-│ └── auth/
-├── main.dart
-
----
-
 ## ▶️ Run Project
 
 ```bash
