@@ -114,9 +114,9 @@ class MealPlanDetailsScreen extends StatelessWidget {
               color: const Color(0xFF1E3A8A).withOpacity(0.1),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(
+            child: const Icon(
               Icons.restaurant,
-              color: const Color(0xFF1E3A8A),
+              color: Color(0xFF1E3A8A),
               size: 30,
             ),
           ),

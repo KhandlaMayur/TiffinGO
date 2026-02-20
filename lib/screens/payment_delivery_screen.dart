@@ -96,10 +96,11 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
             onPressed: () {
               Clipboard.setData(ClipboardData(text: uriString));
               Navigator.pop(ctx);
-              if (mounted)
+              if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                     content: Text('UPI link copied to clipboard'),
                     duration: Duration(seconds: 2)));
+              }
             },
             child: const Text('Copy Link'),
           ),
@@ -550,10 +551,10 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
           children: [
             ElevatedButton(
               onPressed: _uniqueCodeApplied ? null : _applyUniqueCode,
-              child: const Text('Apply Code'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF1E3A8A),
               ),
+              child: const Text('Apply Code'),
             ),
             const SizedBox(width: 12),
             if (_uniqueCodeApplied && _appliedCode != null)
@@ -667,9 +668,10 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
           FirebaseFirestore.instance.collection('subscription_codes').doc(code);
       final doc = await docRef.get();
       if (!doc.exists) {
-        if (mounted)
+        if (mounted) {
           ScaffoldMessenger.of(context)
               .showSnackBar(const SnackBar(content: Text('Code not found')));
+        }
         return;
       }
       final data = doc.data()!;
@@ -680,23 +682,26 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
 
       // Check service ID match
       if (codeServiceId != null && codeServiceId != widget.order.serviceId) {
-        if (mounted)
+        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Code not valid for this service')));
+        }
         return;
       }
       // Check category ID match
       if (codeCategoryId != null && codeCategoryId != widget.order.categoryId) {
-        if (mounted)
+        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
               content: Text('Code not valid for this meal plan')));
+        }
         return;
       }
       // Check meal type match
       if (codeMealType != null && codeMealType != widget.order.mealType) {
-        if (mounted)
+        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
               content: Text('Code not valid for this meal type')));
+        }
         return;
       }
 
@@ -709,9 +714,10 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
       if (!isActive ||
           remaining <= 0 ||
           (expiresAt != null && DateTime.now().isAfter(expiresAt))) {
-        if (mounted)
+        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Code expired or exhausted')));
+        }
         return;
       }
 
@@ -728,7 +734,7 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
       try {
         final subscriptionProvider =
             Provider.of<SubscriptionProvider>(context, listen: false);
-        var matching = null;
+        var matching;
         try {
           matching = subscriptionProvider.subscriptionHistory
               .firstWhere((s) => s.uniqueCode != null && s.uniqueCode == code);
@@ -745,13 +751,15 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
         _appliedCode = code;
       });
 
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Code applied — order will be free')));
+      }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Failed to apply code: $e')));
+      }
     }
   }
 

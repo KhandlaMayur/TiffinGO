@@ -237,9 +237,9 @@ class OrderHistoryScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(
+        title: const Text(
           'Order Details',
-          style: const TextStyle(
+          style: TextStyle(
             color: Color(0xFF1E3A8A),
             fontWeight: FontWeight.bold,
           ),

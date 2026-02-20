@@ -677,7 +677,7 @@ class _TiffinMenuScreenState extends State<TiffinMenuScreen> {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
                                         content: Text(
-                                            '${label} is locked. Only today ( ${_todayDay[0].toUpperCase() + _todayDay.substring(1)} ) is available.'),
+                                            '$label is locked. Only today ( ${_todayDay[0].toUpperCase() + _todayDay.substring(1)} ) is available.'),
                                         duration: const Duration(seconds: 2),
                                       ),
                                     );
@@ -729,7 +729,7 @@ class _TiffinMenuScreenState extends State<TiffinMenuScreen> {
                               ),
                             ),
                           );
-                        }).toList(),
+                        }),
                         const SizedBox(width: 6),
                       ],
                     ),
@@ -980,9 +980,9 @@ class _TiffinMenuScreenState extends State<TiffinMenuScreen> {
               color: const Color(0xFF1E3A8A).withOpacity(0.1),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(
+            child: const Icon(
               Icons.restaurant,
-              color: const Color(0xFF1E3A8A),
+              color: Color(0xFF1E3A8A),
               size: 24,
             ),
           ),

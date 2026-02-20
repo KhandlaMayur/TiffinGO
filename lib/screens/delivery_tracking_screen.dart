@@ -56,7 +56,7 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
         onPageFinished: (url) {
           if (_latitude != null && _longitude != null) {
             final js =
-                'if (typeof updatePosition === "function") updatePosition(${_latitude}, ${_longitude});';
+                'if (typeof updatePosition === "function") updatePosition($_latitude, $_longitude);';
             try {
               controller.runJavaScript(js);
             } catch (e) {
@@ -154,7 +154,7 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
     // Update webview map marker if created
     if (_webController != null) {
       final js =
-          'if (typeof updatePosition === "function") updatePosition(${_latitude}, ${_longitude});';
+          'if (typeof updatePosition === "function") updatePosition($_latitude, $_longitude);';
       try {
         _webController!.runJavaScript(js);
       } catch (_) {
@@ -170,9 +170,9 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
   String _tomTomHtml(double? initialLat, double? initialLng) {
     final lat = initialLat ?? 12.9716; // fallback coordinates (Bengaluru)
     final lng = initialLng ?? 77.5946;
-    final cssUrl =
+    const cssUrl =
         'https://api.tomtom.com/maps-sdk-for-web/6.x/6.17.0/maps/maps.css';
-    final jsUrl =
+    const jsUrl =
         'https://api.tomtom.com/maps-sdk-for-web/6.x/6.17.0/maps/maps-web.min.js';
 
     final html = '''

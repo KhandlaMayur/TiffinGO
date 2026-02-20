@@ -31,7 +31,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
 
     // If no local current user (using Firebase auth), try to load from Firestore
     if ((widget.authProvider.currentUser == null ||
-            widget.authProvider.currentUser!.email!.isEmpty) &&
+            widget.authProvider.currentUser!.email.isEmpty) &&
         fb.FirebaseAuth.instance.currentUser != null) {
       final uid = fb.FirebaseAuth.instance.currentUser!.uid;
       FirebaseFirestore.instance

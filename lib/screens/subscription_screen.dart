@@ -144,10 +144,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
             onPressed: () {
               Clipboard.setData(ClipboardData(text: uriString));
               Navigator.pop(ctx);
-              if (mounted)
+              if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                     content: Text('UPI link copied to clipboard'),
                     duration: Duration(seconds: 2)));
+              }
             },
             child: const Text('Copy Link'),
           ),
@@ -244,11 +245,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.green),
                 ),
-                child: Row(
+                child: const Row(
                   children: [
-                    const Icon(Icons.star, color: Colors.green),
-                    const SizedBox(width: 8),
-                    const Expanded(
+                    Icon(Icons.star, color: Colors.green),
+                    SizedBox(width: 8),
+                    Expanded(
                       child: Text(
                         'First-time user discount: 10% off!',
                         style: TextStyle(
@@ -329,16 +330,14 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                             child: TextButton.icon(
                               onPressed: () {
                                 final sub = active;
-                                if (sub != null) {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => SubscriptionInvoiceScreen(
-                                          subscription: sub),
-                                    ),
-                                  );
-                                }
-                              },
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => SubscriptionInvoiceScreen(
+                                        subscription: sub),
+                                  ),
+                                );
+                                                            },
                               style: TextButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(
                                     vertical: 8, horizontal: 8),
@@ -403,11 +402,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                               onPressed: () async {
                                 await subscriptionProvider
                                     .cancelSubscription(active.id);
-                                if (mounted)
+                                if (mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
                                           content:
                                               Text('Subscription cancelled')));
+                                }
                               },
                               style: TextButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(
@@ -956,7 +956,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         ),
         Switch(
           value: _autoRenew,
-          activeColor: const Color(0xFF1E3A8A),
+          activeThumbColor: const Color(0xFF1E3A8A),
           onChanged: (val) {
             setState(() {
               _autoRenew = val;
@@ -984,7 +984,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
             ),
             Switch(
               value: _allowPause,
-              activeColor: const Color(0xFF1E3A8A),
+              activeThumbColor: const Color(0xFF1E3A8A),
               onChanged: (val) {
                 setState(() {
                   _allowPause = val;
@@ -1190,9 +1190,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 
             // Validate amount is reasonable
             if (_totalPrice <= 0) {
-              return Column(
+              return const Column(
                 children: [
-                  const Text(
+                  Text(
                       'Invalid amount. Please check your subscription details.',
                       style: TextStyle(color: Colors.red)),
                 ],

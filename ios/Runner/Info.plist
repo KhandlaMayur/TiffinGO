@@ -45,5 +45,10 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- Location permissions required by geolocator and delivery tracking -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>We need your location to show delivery progress on the map.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Background location access is required to update delivery status while the app is running.</string>
 </dict>
 </plist>

@@ -6,7 +6,7 @@ class OnboardingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final navy = const Color(0xFF001F54); // navy blue for the button
+    const navy = Color(0xFF001F54); // navy blue for the button
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -41,11 +41,11 @@ class OnboardingScreen extends StatelessWidget {
                       // Slight overlay for better text contrast
                       Container(color: Colors.black.withOpacity(0.15)),
                       // Optional small title/logo at top-left
-                      Positioned(
+                      const Positioned(
                         left: 20,
                         top: 20,
                         child: Row(
-                          children: const [
+                          children: [
                             Icon(
                               Icons.restaurant,
                               color: Colors.white,
@@ -120,9 +120,9 @@ class OnboardingScreen extends StatelessWidget {
                             ),
                             elevation: 6,
                           ),
-                          child: Row(
+                          child: const Row(
                             mainAxisAlignment: MainAxisAlignment.center,
-                            children: const [
+                            children: [
                               Text(
                                 'Get Start',
                                 style: TextStyle(

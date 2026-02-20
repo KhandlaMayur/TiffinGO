@@ -36,7 +36,7 @@ class _AccountDrawerState extends State<AccountDrawer> {
                           bottomLeft: Radius.circular(30),
                           bottomRight: Radius.circular(30),
                         ),
-                        boxShadow: [
+                        boxShadow: const [
                           BoxShadow(
                             color: Color(0x40000000),
                             blurRadius: 4,
@@ -106,7 +106,7 @@ class _AccountDrawerState extends State<AccountDrawer> {
                                             authProvider
                                                 .currentUser?.fullName ??
                                             'User',
-                                        style: TextStyle(
+                                        style: const TextStyle(
                                           color: Colors.white,
                                           fontSize: 20,
                                           fontWeight: FontWeight.bold,
@@ -259,7 +259,7 @@ class _AccountDrawerState extends State<AccountDrawer> {
                                     onChanged: (_) {
                                       themeProvider.toggleTheme();
                                     },
-                                    activeColor: Theme.of(context).primaryColor,
+                                    activeThumbColor: Theme.of(context).primaryColor,
                                   ),
                                 ],
                               ),
@@ -351,7 +351,7 @@ class _AccountDrawerState extends State<AccountDrawer> {
                                             ),
                                           ),
                                         )
-                                        .toList(),
+                                        ,
                                 ],
                               ),
                             );

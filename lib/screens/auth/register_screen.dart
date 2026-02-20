@@ -245,7 +245,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final navy = const Color(0xFF001F54);
+    const navy = Color(0xFF001F54);
 
     return Scaffold(
       backgroundColor: Colors.grey[100],
@@ -259,12 +259,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 clipper: _BottomArcClipper(),
                 child: Container(
                   color: navy,
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 40.0, left: 16.0),
+                  child: const Padding(
+                    padding: EdgeInsets.only(top: 40.0, left: 16.0),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Padding(
+                        Padding(
                           padding: EdgeInsets.only(top: 8.0, left: 16.0),
                           child: Text(
                             'Create Account\nJoin TiffinGo Today',

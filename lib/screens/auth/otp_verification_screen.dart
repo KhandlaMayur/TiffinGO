@@ -219,7 +219,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final navy = const Color(0xFF001F54);
+    const navy = Color(0xFF001F54);
 
     return Scaffold(
       backgroundColor: Colors.grey[100],

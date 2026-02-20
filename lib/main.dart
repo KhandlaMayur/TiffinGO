@@ -19,11 +19,14 @@ import 'providers/firebase_auth_provider.dart';
 import 'providers/firestore_order_provider.dart';
 import 'providers/firestore_subscription_provider.dart';
 import 'providers/theme_provider.dart';
+import 'providers/network_provider.dart';
+import 'services/offline_operation_service.dart';
+import 'widgets/network_poor_overlay.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Lock app to portrait orientation only 
+  // Lock app to portrait orientation only
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
   ]);
@@ -32,12 +35,16 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+  // Initialize offline operation service for data persistence
+  final offlineService = OfflineOperationService();
+  await offlineService.initialize();
+
   // Configure platform-specific WebView settings
   if (WebViewPlatform.instance != null) {
     try {
       if (Platform.isAndroid) {
-        final PlatformWebViewControllerCreationParams params =
-            const PlatformWebViewControllerCreationParams();
+        const PlatformWebViewControllerCreationParams params =
+            PlatformWebViewControllerCreationParams();
         final WebViewController controller =
             WebViewController.fromPlatformCreationParams(params);
         // Apply Android-specific settings
@@ -45,8 +52,8 @@ void main() async {
             controller.platform as AndroidWebViewController;
         androidController.setMediaPlaybackRequiresUserGesture(false);
       } else if (Platform.isIOS) {
-        final PlatformWebViewControllerCreationParams params =
-            const PlatformWebViewControllerCreationParams();
+        const PlatformWebViewControllerCreationParams params =
+            PlatformWebViewControllerCreationParams();
         final WebViewController controller =
             WebViewController.fromPlatformCreationParams(params);
         // Apply iOS-specific settings
@@ -95,6 +102,10 @@ class _TiffineAppState extends State<TiffineApp> {
         ChangeNotifierProvider(create: (_) => SubscriptionProvider()),
         ChangeNotifierProvider(create: (_) => FirestoreSubscriptionProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        // Network monitoring provider
+        ChangeNotifierProvider(create: (_) => NetworkProvider()),
+        // Offline operations service for data persistence
+        ChangeNotifierProvider(create: (_) => OfflineOperationService()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, child) {
@@ -111,6 +122,17 @@ class _TiffineAppState extends State<TiffineApp> {
               '/home': (context) => const LandingScreen(),
             },
             debugShowCheckedModeBanner: false,
+            // Builder wraps the entire app with network monitoring
+            // The NetworkPoorOverlay displays a centered "Poor Connection"
+            // message that blocks all user interaction when needed
+            builder: (context, child) {
+              return Stack(
+                children: [
+                  SizedBox.expand(child: child),
+                  const NetworkPoorOverlay(),
+                ],
+              );
+            },
           );
         },
       ),

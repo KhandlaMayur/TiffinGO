@@ -11,9 +11,9 @@ class DebugFirestoreButton extends StatelessWidget {
   final String collection;
 
   const DebugFirestoreButton({
-    Key? key,
+    super.key,
     this.collection = 'health_check',
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
