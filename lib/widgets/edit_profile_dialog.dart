@@ -35,7 +35,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
         fb.FirebaseAuth.instance.currentUser != null) {
       final uid = fb.FirebaseAuth.instance.currentUser!.uid;
       FirebaseFirestore.instance
-          .collection('register_login')
+          .collection('user_register')
           .doc(uid)
           .get()
           .then((doc) {
@@ -81,7 +81,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
       if (fbUser != null) {
         try {
           await FirebaseFirestore.instance
-              .collection('register_login')
+              .collection('user_register')
               .doc(fbUser.uid)
               .set({
             'fullName': _fullNameController.text.trim(),

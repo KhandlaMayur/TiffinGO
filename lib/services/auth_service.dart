@@ -17,14 +17,11 @@ class AuthService {
         'email': email,
         'phone': phone ?? user.phoneNumber,
         'createdAt': FieldValue.serverTimestamp(),
-        'lastLoginAt': null,
-        'loginCount': 0,
         'isAdmin': false,
-        'lastAction': 'register',
       };
       if (extraFields != null) data.addAll(extraFields);
-      // Store registration info in single collection `register_login`
-      await _db.collection('register_login').doc(user.uid).set(data);
+      // Store registration info in 'user_register' collection
+      await _db.collection('user_register').doc(user.uid).set(data);
     }
     return user;
   }
@@ -35,10 +32,12 @@ class AuthService {
     final user = cred.user;
     if (user != null) {
       try {
-        await _db.collection('register_login').doc(user.uid).set(
+        // Store login info in 'user_login' collection
+        await _db.collection('user_login').doc(user.uid).set(
           {
+            'uid': user.uid,
+            'email': email,
             'lastLoginAt': FieldValue.serverTimestamp(),
-            'lastAction': 'login',
             'loginCount': FieldValue.increment(1),
           },
           SetOptions(merge: true),

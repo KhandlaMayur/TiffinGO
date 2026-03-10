@@ -94,7 +94,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
               orElse: () => throw Exception('Pending user not found'),
             );
 
-            // create firebase auth user and write register_login/{uid}
+            // create firebase auth user and write user_register/{uid}
             final fbUser = await firebaseAuth.registerWithEmail(
               pendingUser.email,
               pendingUser.password,

@@ -160,9 +160,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final email = _emailController.text.trim();
     final contact = _contactController.text.trim();
 
-    // Check if email already exists in Firestore register_login collection
+    // Check if email already exists in Firestore user_register collection
     final emailSnap = await FirebaseFirestore.instance
-        .collection('register_login')
+        .collection('user_register')
         .where('email', isEqualTo: email)
         .limit(1)
         .get();
@@ -181,9 +181,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    // Check if contact already exists in Firestore register_login collection
+    // Check if contact already exists in Firestore user_register collection
     final contactSnap = await FirebaseFirestore.instance
-        .collection('register_login')
+        .collection('user_register')
         .where('phone', isEqualTo: contact)
         .limit(1)
         .get();

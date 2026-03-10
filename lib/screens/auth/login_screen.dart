@@ -79,7 +79,7 @@ class _LoginScreenState extends State<LoginScreen> {
     // If the user entered a phone number (digits only), try to lookup email in Firestore
     if (RegExp(r'^[0-9]+$').hasMatch(emailOrContact)) {
       final snap = await FirebaseFirestore.instance
-          .collection('register_login')
+          .collection('user_register')
           .where('phone', isEqualTo: emailOrContact)
           .limit(1)
           .get();
