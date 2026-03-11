@@ -6,6 +6,7 @@ import '../models/tiffine_service_model.dart';
 import '../data/meal_plans_data.dart';
 import '../screens/payment_delivery_screen.dart';
 import '../screens/subscription_screen.dart';
+import '../screens/meal_plan_details_screen.dart';
 
 class TiffineServicesList extends StatelessWidget {
   final String searchQuery;
@@ -409,6 +410,8 @@ class _TiffinMenuScreenState extends State<TiffinMenuScreen> {
 
     // Get meal plans from data file
     _mealPlans = MealPlansData.getVegMealPlans(widget.service['id']);
+    // prefetch firestore menu data so details screen can load quickly
+    MealPlansData.loadData();
     _calculateTotal();
   }
 
@@ -860,9 +863,54 @@ class _TiffinMenuScreenState extends State<TiffinMenuScreen> {
     final price = plan.prices[_selectedMealType] ?? 0.0;
 
     return GestureDetector(
-      onLongPress: () {
-        // Show meal plan details popup with animation
-        _showMealPlanDetailsPopup(context, plan);
+      onLongPress: () async {
+        debugPrint('🔵 Long-press detected on plan: ${plan.name}');
+
+        if (_selectedMealType == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content:
+                  Text('Please select a meal type before viewing details.'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+          return;
+        }
+
+        try {
+          final day = _selectedDay;
+          debugPrint(
+              '🔵 Fetching menu: ${widget.service['id']} / $_selectedMealType / ${plan.id} / $day');
+
+          final menu = await MealPlansData.getDailyMenu(
+              widget.service['id'], _selectedMealType!, plan.id, day);
+
+          debugPrint('🟢 Menu fetched: $menu');
+
+          if (!mounted) return;
+
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => MealPlanDetailsScreen(
+                mealPlan: plan,
+                mealType: _selectedMealType!,
+                serviceId: widget.service['id'],
+                selectedDay: day,
+                initialMenu: menu,
+              ),
+            ),
+          );
+        } catch (e) {
+          debugPrint('🔴 Error in long-press: $e');
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error loading menu: $e'),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
       },
       onTap: () {
         setState(() {
@@ -1092,135 +1140,6 @@ class _TiffinMenuScreenState extends State<TiffinMenuScreen> {
       MaterialPageRoute(
         builder: (context) => PaymentDeliveryScreen(order: order),
       ),
-    );
-  }
-
-  void _showMealPlanDetailsPopup(BuildContext context, MealPlan plan) {
-    final mealItems = plan.contents[_selectedMealType] ?? [];
-
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-      barrierColor: Colors.black54,
-      transitionDuration: const Duration(milliseconds: 300),
-      pageBuilder: (BuildContext buildContext, Animation<double> animation,
-          Animation<double> secondaryAnimation) {
-        return ScaleTransition(
-          scale: Tween<double>(begin: 0.0, end: 1.0).animate(
-            CurvedAnimation(parent: animation, curve: Curves.elasticOut),
-          ),
-          child: AlertDialog(
-            title: Text(
-              plan.name,
-              style: const TextStyle(
-                color: Color(0xFF1E3A8A),
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
-            ),
-            content: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Meal Type: ${_selectedMealType ?? "N/A"}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Menu Items:',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: Color(0xFF1E3A8A),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  if (mealItems.isNotEmpty)
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: mealItems
-                          .map((item) => Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 4),
-                                child: Row(
-                                  children: [
-                                    const Icon(
-                                      Icons.restaurant,
-                                      size: 16,
-                                      color: Color(0xFF1E3A8A),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        '${item.quantity}x ${item.name}',
-                                        style: const TextStyle(fontSize: 13),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ))
-                          .toList(),
-                    )
-                  else
-                    const Text(
-                      'No items for this meal type',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey,
-                      ),
-                    ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E3A8A).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Price:',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF1E3A8A),
-                          ),
-                        ),
-                        Text(
-                          '₹${plan.prices[_selectedMealType]?.toStringAsFixed(2) ?? "0.00"}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Color(0xFF1E3A8A),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text(
-                  'Close',
-                  style: TextStyle(
-                    color: Color(0xFF1E3A8A),
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 }

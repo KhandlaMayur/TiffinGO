@@ -14,6 +14,7 @@ import '../providers/location_provider.dart';
 import '../providers/firestore_order_provider.dart';
 import '../providers/subscription_provider.dart';
 import '../models/order_model.dart';
+import '../config/api_config.dart';
 
 class DeliveryTrackingScreen extends StatefulWidget {
   final OrderModel order;
@@ -30,7 +31,8 @@ class DeliveryTrackingScreen extends StatefulWidget {
 class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
   int _currentStep = 0; // 0: Preparing, 1: Out for Delivery, 2: Delivered
   // TomTom & location state
-  final String _tomtomApiKey = 'DbYZO9XiU3YZJl1eJLshFvJa7c4c5viJ';
+  // use centralized config so we don't hardcode the key in multiple places
+  final String _tomtomApiKey = ApiConfig.tomTomApiKey;
   double? _latitude;
   double? _longitude;
   String _locationText = 'Fetching location...';
@@ -71,7 +73,18 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
       ));
 
       final htmlContent = _tomTomHtml(_latitude, _longitude);
-      await controller.loadHtmlString(htmlContent);
+      debugPrint('HTML content generated (length=${htmlContent.length})');
+      // _tomTomHtml may return either raw HTML or a data URI;
+      // if it's a data URI we need to load it as a request so the controller
+      // parses the embedded HTML rather than treating the URI string itself
+      // as page content.
+      if (htmlContent.startsWith('data:')) {
+        debugPrint('Detected data URI; loading via loadRequest');
+        await controller.loadRequest(Uri.parse(htmlContent));
+      } else {
+        debugPrint('Loading raw HTML string into WebView');
+        await controller.loadHtmlString(htmlContent);
+      }
       return controller;
     } catch (e) {
       setState(() => _webAvailable = false);
@@ -212,8 +225,9 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
 </html>
 ''';
 
-    return Uri.dataFromString(html, mimeType: 'text/html', encoding: utf8)
-        .toString();
+    // returning raw HTML simplifies loading; the caller handles data URIs when
+    // necessary.
+    return html;
   }
 
   void _simulateDeliveryProgress() async {

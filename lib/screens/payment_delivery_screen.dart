@@ -12,7 +12,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../providers/firestore_order_provider.dart';
 import '../providers/subscription_provider.dart';
 import '../models/order_model.dart';
-import 'delivery_tracking_screen.dart';
+import 'advanced_delivery_tracking_screen.dart';
 
 class PaymentDeliveryScreen extends StatefulWidget {
   final OrderModel order;
@@ -858,7 +858,8 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => DeliveryTrackingScreen(order: updatedOrder),
+              builder: (context) =>
+                  AdvancedDeliveryTrackingScreen(order: updatedOrder),
             ),
           );
         },
@@ -969,7 +970,8 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => DeliveryTrackingScreen(order: updatedOrder),
+              builder: (context) =>
+                  AdvancedDeliveryTrackingScreen(order: updatedOrder),
             ),
           );
         },
@@ -1020,7 +1022,8 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => DeliveryTrackingScreen(order: updatedOrder),
+            builder: (context) =>
+                AdvancedDeliveryTrackingScreen(order: updatedOrder),
           ),
         );
       },
@@ -1144,7 +1147,7 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
               context,
               MaterialPageRoute(
                 builder: (context) =>
-                    DeliveryTrackingScreen(order: updatedOrder),
+                    AdvancedDeliveryTrackingScreen(order: updatedOrder),
               ),
             );
           },

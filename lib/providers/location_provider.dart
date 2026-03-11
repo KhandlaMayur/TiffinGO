@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import '../config/api_config.dart';
 
 class LocationProvider with ChangeNotifier {
   String _currentLocation = 'Loading...';
@@ -49,10 +50,11 @@ class LocationProvider with ChangeNotifier {
         desiredAccuracy: LocationAccuracy.high,
       );
 
-      // 🔹 Add your API key section here (around line 50–60)
-      // Add your API key here
-      const String apiKey = 'DbYZO9XiU3YZJl1eJLshFvJa7c4c5viJ';
-      
+      // Use TomTom API key from config (for geocoding services)
+      final apiKey = ApiConfig.tomTomApiKey;
+      debugPrint(
+          '🔍 Using API key for geocoding: ${apiKey.substring(0, 5)}...');
+
       // Use the API key in your geocoding requests (optional customization)
       List<Placemark> placemarks = await placemarkFromCoordinates(
         position.latitude,
@@ -63,7 +65,8 @@ class LocationProvider with ChangeNotifier {
       if (placemarks.isNotEmpty) {
         Placemark place = placemarks[0];
         _currentLocation = '${place.locality}, ${place.administrativeArea}';
-        _currentAddress = '${place.street}, ${place.locality}, ${place.administrativeArea}';
+        _currentAddress =
+            '${place.street}, ${place.locality}, ${place.administrativeArea}';
       } else {
         _currentLocation = 'Location not found';
         _currentAddress = 'Address not found';

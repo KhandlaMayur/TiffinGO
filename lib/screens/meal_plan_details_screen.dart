@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import '../models/tiffine_service_model.dart';
 import '../data/meal_plans_data.dart';
 
-class MealPlanDetailsScreen extends StatelessWidget {
+class MealPlanDetailsScreen extends StatefulWidget {
   final MealPlan mealPlan;
   final String mealType;
   final String serviceId;
   final String selectedDay;
+
+  /// optional pre-fetched list of menu strings, useful to display immediately
+  final List<String>? initialMenu;
 
   const MealPlanDetailsScreen({
     super.key,
@@ -14,26 +17,69 @@ class MealPlanDetailsScreen extends StatelessWidget {
     required this.mealType,
     required this.serviceId,
     required this.selectedDay,
+    this.initialMenu,
   });
 
   @override
-  Widget build(BuildContext context) {
-    // If a selectedDay is provided, prefer daily menu from MealPlansData
-    final dayItems = MealPlansData.getDailyMenu(
-        serviceId, mealType, mealPlan.id, selectedDay);
-    final items = (dayItems.isNotEmpty)
-        ? dayItems
-            .map((s) => MealPlanItem(name: s, image: '', quantity: 1))
-            .toList()
-        : (mealPlan.contents[mealType] ?? []);
+  State<MealPlanDetailsScreen> createState() => _MealPlanDetailsScreenState();
+}
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('${mealPlan.name} - ${mealType.toUpperCase()}'),
-        backgroundColor: const Color(0xFF1E3A8A),
-        foregroundColor: Colors.white,
-      ),
-      body: ListView(
+class _MealPlanDetailsScreenState extends State<MealPlanDetailsScreen> {
+  List<String> dayItems = [];
+  bool _loading = false;
+
+  String _capitalize(String s) =>
+      s.isNotEmpty ? '${s[0].toUpperCase()}${s.substring(1)}' : s;
+
+  @override
+  void initState() {
+    super.initState();
+    debugPrint(
+        '📄 MealPlanDetailsScreen init: initialMenu=${widget.initialMenu}, length=${widget.initialMenu?.length ?? 0}');
+    if (widget.initialMenu != null && widget.initialMenu!.isNotEmpty) {
+      debugPrint('📄 Using initialMenu from navigation');
+      dayItems = widget.initialMenu!;
+    } else {
+      debugPrint('📄 No initialMenu, fetching from Firestore...');
+      _loadDayItems();
+    }
+  }
+
+  Future<void> _loadDayItems() async {
+    setState(() {
+      _loading = true;
+    });
+    final items = await MealPlansData.getDailyMenu(widget.serviceId,
+        widget.mealType, widget.mealPlan.id, widget.selectedDay);
+    // debug output – will appear in console when running
+    debugPrint(
+        'loaded menu: ${widget.serviceId}/${widget.mealType}/${widget.mealPlan.id}/${widget.selectedDay} -> $items');
+    setState(() {
+      dayItems = items;
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<MealPlanItem> items = dayItems
+        .map((s) => MealPlanItem(name: s, image: '', quantity: 1))
+        .toList();
+
+    Widget bodyContent;
+    if (_loading) {
+      bodyContent = const Center(child: CircularProgressIndicator());
+    } else if (items.isEmpty) {
+      bodyContent = Center(
+        child: Text(
+          'No menu available for ${_capitalize(widget.selectedDay)}.\n'
+          'Please make sure the Firestore document contains the data.',
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 16, color: Colors.grey),
+        ),
+      );
+    } else {
+      bodyContent = ListView(
         padding: const EdgeInsets.all(16),
         children: [
           // Header with price
@@ -52,7 +98,7 @@ class MealPlanDetailsScreen extends StatelessWidget {
             child: Column(
               children: [
                 Text(
-                  '₹${(mealPlan.prices[mealType] ?? 0).toStringAsFixed(0)}',
+                  '₹${(widget.mealPlan.prices[widget.mealType] ?? 0).toStringAsFixed(0)}',
                   style: const TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.bold,
@@ -61,7 +107,7 @@ class MealPlanDetailsScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  mealPlan.description,
+                  widget.mealPlan.description,
                   style: const TextStyle(
                     fontSize: 16,
                     color: Colors.grey,
@@ -84,7 +130,17 @@ class MealPlanDetailsScreen extends StatelessWidget {
           // Meal plan / daily menu items
           ...items.map((item) => _buildFoodItem(item)),
         ],
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+            '${widget.mealPlan.name} ${_capitalize(widget.serviceId)} ${_capitalize(widget.selectedDay)}'),
+        backgroundColor: const Color(0xFF1E3A8A),
+        foregroundColor: Colors.white,
       ),
+      body: bodyContent,
     );
   }
 

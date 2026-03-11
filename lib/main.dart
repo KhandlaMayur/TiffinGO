@@ -22,18 +22,24 @@ import 'providers/theme_provider.dart';
 import 'providers/network_provider.dart';
 import 'services/offline_operation_service.dart';
 import 'widgets/network_poor_overlay.dart';
+import 'services/firestore_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // TEMPORARY: Upload meal data once.  You can uncomment this block
+  // if you need to re-upload the dataset, but it is no longer required
+  // on every launch since the full map is already included above.
+  //
+  // final firestoreService = FirestoreService();
+  // await firestoreService.uploadMealPlansData();
+  // print('✅ Meal plans data uploaded to Firestore!');
 
   // Lock app to portrait orientation only
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
   ]);
-
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
 
   // Initialize offline operation service for data persistence
   final offlineService = OfflineOperationService();
