@@ -4,9 +4,11 @@ import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:io' show Platform;
+import 'dart:math' show sin, cos, atan2, sqrt;
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:latlong2/latlong.dart';
 import '../providers/order_provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../providers/firestore_order_provider.dart';
@@ -32,17 +34,172 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
   final TextEditingController _uniqueCodeController = TextEditingController();
   bool _uniqueCodeApplied = false;
   String? _appliedCode;
-  double _deliveryCharge = 50.0; // Default delivery charge
+  double _deliveryCharge = 0.0;
   Position? _currentPosition;
   String _selectedAddress = '';
   bool _useCurrentLocation = true;
   final TextEditingController _otherAddressController = TextEditingController();
 
+  // GST and Delivery Charge Calculation Constants
+  static const double GST_RATE = 0.18; // 18% GST
+  static const double PER_KM_CHARGE = 5.0; // 5 rupees per kilometer
+
+  // Service location will be fetched from Firestore
+  double? _serviceLatitude;
+  double? _serviceLongitude;
+
+  /// Fallback coordinates in case Firestore doesn't have the service details.
+  /// This ensures delivery charge can still be calculated even when Firestore is missing.
+  static const Map<String, LatLng> _serviceFallbackLocations = {
+    'kathiyavadi': LatLng(22.2953, 70.8000), // Trikon Baug, Rajkot
+    'nani': LatLng(22.2964, 70.7903), // Yagnik Road, Rajkot
+    'rajwadi': LatLng(22.3248, 70.7720), // Madhapar, Rajkot
+    'desi_rotalo': LatLng(22.34, 70.80), // Greenland Chowk, Rajkot
+  };
+
+  double _gstAmount = 0.0;
+  double _distanceInKm = 0.0;
+
   @override
   void initState() {
     super.initState();
+    _fetchServiceLocation();
     _calculateFinalAmount();
     _getCurrentLocation();
+  }
+
+  // Fetch the tiffin service location from Firestore
+  Future<void> _fetchServiceLocation() async {
+    try {
+      debugPrint(
+          '🔍 Fetching location for service: ${widget.order.serviceName} (ID: ${widget.order.serviceId})');
+
+      // Try fetching using serviceId first (preferred)
+      if (widget.order.serviceId != null &&
+          widget.order.serviceId!.isNotEmpty) {
+        final doc = await FirebaseFirestore.instance
+            .collection('tiffin_services')
+            .doc(widget.order.serviceId)
+            .get();
+
+        if (doc.exists) {
+          final data = doc.data();
+          final lat = (data?['latitude'] as num?)?.toDouble();
+          final lng = (data?['longitude'] as num?)?.toDouble();
+
+          debugPrint('✅ Found by serviceId: Lat=$lat, Lng=$lng');
+
+          setState(() {
+            _serviceLatitude = lat;
+            _serviceLongitude = lng;
+          });
+
+          // Recalculate distance if location is already available
+          if (_currentPosition != null && lat != null && lng != null) {
+            _recalculateDeliveryCharge();
+          }
+          return;
+        } else {
+          debugPrint(
+              '❌ Document not found for serviceId: ${widget.order.serviceId}');
+        }
+      }
+
+      // Fallback: fetch by service name
+      debugPrint('🔎 Searching by service name: ${widget.order.serviceName}');
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('tiffin_services')
+          .where('name', isEqualTo: widget.order.serviceName)
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isNotEmpty) {
+        final data = querySnapshot.docs.first.data();
+        final lat = (data['latitude'] as num?)?.toDouble();
+        final lng = (data['longitude'] as num?)?.toDouble();
+
+        debugPrint('✅ Found by name: Lat=$lat, Lng=$lng');
+
+        setState(() {
+          _serviceLatitude = lat;
+          _serviceLongitude = lng;
+        });
+
+        // Recalculate distance if location is already available
+        if (_currentPosition != null && lat != null && lng != null) {
+          _recalculateDeliveryCharge();
+        }
+      } else {
+        debugPrint(
+            '❌ No documents found for service name: ${widget.order.serviceName}');
+        debugPrint('⚠️ Falling back to built-in coordinates for this service');
+
+        // Use a static fallback location if Firestore is missing the document. This ensures
+        // delivery fee is still calculated instead of staying zero.
+        final key = widget.order.serviceId?.toLowerCase() ??
+            widget.order.serviceName.toLowerCase().replaceAll(' ', '_');
+        final fallback = _serviceFallbackLocations[key];
+        if (fallback != null) {
+          setState(() {
+            _serviceLatitude = fallback.latitude;
+            _serviceLongitude = fallback.longitude;
+          });
+          if (_currentPosition != null) {
+            _recalculateDeliveryCharge();
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Error fetching service location: $e');
+
+      // If Firestore fails, fall back to built-in location info.
+      final key = widget.order.serviceId?.toLowerCase() ??
+          widget.order.serviceName.toLowerCase().replaceAll(' ', '_');
+      final fallback = _serviceFallbackLocations[key];
+      if (fallback != null) {
+        setState(() {
+          _serviceLatitude = fallback.latitude;
+          _serviceLongitude = fallback.longitude;
+        });
+        if (_currentPosition != null) {
+          _recalculateDeliveryCharge();
+        }
+      }
+    }
+  }
+
+  // Recalculate delivery charge when both locations are available
+  void _recalculateDeliveryCharge() {
+    if (_serviceLatitude == null ||
+        _serviceLongitude == null ||
+        _currentPosition == null) {
+      debugPrint('⚠️ Cannot calculate: Missing coordinates');
+      return;
+    }
+
+    setState(() {
+      _distanceInKm = _calculateDistance(
+        _serviceLatitude!,
+        _serviceLongitude!,
+        _currentPosition!.latitude,
+        _currentPosition!.longitude,
+      );
+
+      debugPrint('📍 Distance calculated: $_distanceInKm km');
+
+      final subscriptionProvider =
+          Provider.of<SubscriptionProvider>(context, listen: false);
+      final hasActiveSubscription = subscriptionProvider.hasActiveSubscription;
+
+      if (hasActiveSubscription) {
+        _deliveryCharge = 0.0; // Free delivery for subscribers
+        debugPrint('✅ Delivery: FREE (Subscriber)');
+      } else {
+        _deliveryCharge = _calculateDeliveryCharge(_distanceInKm);
+        debugPrint(
+            '💰 Delivery charge: ₹$_deliveryCharge ($_distanceInKm km × ₹5/km)');
+      }
+    });
   }
 
   Future<void> _launchUpi(String uriString) async {
@@ -134,19 +291,67 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
     super.dispose();
   }
 
+  // Calculate distance between two coordinates using Haversine formula
+  double _calculateDistance(
+      double lat1, double lon1, double lat2, double lon2) {
+    const double earthRadiusKm = 6371.0;
+
+    final double dLat = (lat2 - lat1) * (3.14159265359 / 180.0);
+    final double dLon = (lon2 - lon1) * (3.14159265359 / 180.0);
+
+    final double a = (sin(dLat / 2) * sin(dLat / 2)) +
+        (cos(lat1 * (3.14159265359 / 180.0)) *
+            cos(lat2 * (3.14159265359 / 180.0)) *
+            sin(dLon / 2) *
+            sin(dLon / 2));
+
+    final double c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    final double distanceKm = earthRadiusKm * c;
+
+    return distanceKm;
+  }
+
+  // Calculate delivery charge based on distance (5 rupees per km)
+  double _calculateDeliveryCharge(double distanceKm) {
+    // Only per km charge, no base charge
+    return distanceKm * PER_KM_CHARGE;
+  }
+
+  // Calculate GST amount
+  double _calculateGST(double amount) {
+    return amount * GST_RATE;
+  }
+
   Future<void> _getCurrentLocation() async {
     try {
+      debugPrint('📍 Requesting user location...');
+
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
       if (permission == LocationPermission.deniedForever) {
+        debugPrint('❌ Location permission denied');
         return;
       }
+
       final position = await Geolocator.getCurrentPosition();
+      debugPrint(
+          '✅ User location: ${position.latitude}, ${position.longitude}');
+
       setState(() {
         _currentPosition = position;
       });
+
+      // Try to calculate distance if service location is available
+      if (_serviceLatitude != null && _serviceLongitude != null) {
+        debugPrint('✅ Service location available, calculating distance...');
+        _recalculateDeliveryCharge();
+      } else {
+        debugPrint(
+            '⏳ Service location not yet loaded, will calculate when available');
+      }
+
       try {
         final placemarks = await placemarkFromCoordinates(
             position.latitude, position.longitude);
@@ -161,7 +366,7 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
         // ignore reverse geocode errors
       }
     } catch (e) {
-      // ignore location errors
+      debugPrint('❌ Error getting location: $e');
     }
   }
 
@@ -173,10 +378,18 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
     if (hasActiveSubscription) {
       _deliveryCharge = 0.0; // Free delivery for subscribers
     } else {
-      _deliveryCharge = 50.0; // Regular delivery charge
+      // Use calculated delivery charge based on distance, or default if no location
+      if (_distanceInKm > 0) {
+        _deliveryCharge = _calculateDeliveryCharge(_distanceInKm);
+      } else {
+        _deliveryCharge = 0.0; // No delivery charge if location not available
+      }
     }
 
-    // Calculate final amount when needed using widget.order.amount + _deliveryCharge
+    // Calculate GST on meal amount
+    _gstAmount = _calculateGST(widget.order.amount);
+
+    // Calculate final amount when needed using widget.order.amount + GST + _deliveryCharge
   }
 
   @override
@@ -275,16 +488,37 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
           const Divider(),
           _buildSummaryRow(
               'Meal Amount', '₹${widget.order.amount.toStringAsFixed(2)}'),
+
+          // GST Section
+          _buildSummaryRow(
+            'GST (18%)',
+            '₹${_gstAmount.toStringAsFixed(2)}',
+            color: Colors.orange,
+          ),
+
+          // Delivery Charge with Distance Info
           Consumer<SubscriptionProvider>(
             builder: (context, subscriptionProvider, child) {
               final hasActiveSubscription =
                   subscriptionProvider.hasActiveSubscription;
+
+              String deliveryChargeText;
+              Color? deliveryChargeColor;
+
+              if (hasActiveSubscription) {
+                deliveryChargeText = 'FREE (Subscribed)';
+                deliveryChargeColor = Colors.green;
+              } else {
+                deliveryChargeText = _distanceInKm > 0
+                    ? '₹${_deliveryCharge.toStringAsFixed(2)} (${_distanceInKm.toStringAsFixed(1)} km)'
+                    : '₹${_deliveryCharge.toStringAsFixed(2)}';
+                deliveryChargeColor = null;
+              }
+
               return _buildSummaryRow(
                 'Delivery Charge',
-                hasActiveSubscription
-                    ? 'FREE (Subscribed)'
-                    : '₹${_deliveryCharge.toStringAsFixed(2)}',
-                color: hasActiveSubscription ? Colors.green : null,
+                deliveryChargeText,
+                color: deliveryChargeColor,
               );
             },
           ),
@@ -303,7 +537,8 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
                 builder: (context, subscriptionProvider, child) {
                   final hasActiveSubscription =
                       subscriptionProvider.hasActiveSubscription;
-                  double finalAmount = widget.order.amount +
+                  double mealWithGST = widget.order.amount + _gstAmount;
+                  double finalAmount = mealWithGST +
                       (hasActiveSubscription ? 0.0 : _deliveryCharge);
                   if (_uniqueCodeApplied) finalAmount = 0.0;
                   return Column(
@@ -395,6 +630,16 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
               });
               if (v) {
                 await _getCurrentLocation();
+                // Wait a moment for service location to be fetched if not already available
+                if (_serviceLatitude == null || _serviceLongitude == null) {
+                  debugPrint('⏳ Waiting for service location to be fetched...');
+                  await Future.delayed(const Duration(milliseconds: 500));
+                  if (_serviceLatitude != null &&
+                      _serviceLongitude != null &&
+                      _currentPosition != null) {
+                    _recalculateDeliveryCharge();
+                  }
+                }
               }
             },
             title: const Text('Use current location'),
@@ -782,7 +1027,10 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
               Provider.of<SubscriptionProvider>(context, listen: false);
           final hasActiveSubscription =
               subscriptionProvider.hasActiveSubscription;
+          // Ensure delivery charge (and GST) is included in the final amount.
+          // GST is calculated on the meal amount and displayed above.
           var finalAmount = widget.order.amount +
+              _gstAmount +
               (hasActiveSubscription ? 0.0 : _deliveryCharge);
           // If unique code is applied, order is free
           if (_uniqueCodeApplied) finalAmount = 0.0;
@@ -1073,7 +1321,9 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
                 Provider.of<SubscriptionProvider>(context, listen: false);
             final hasActiveSubscription =
                 subscriptionProvider.hasActiveSubscription;
+            // Ensure GST + delivery charge are included in final amount
             var finalAmount = widget.order.amount +
+                _gstAmount +
                 (hasActiveSubscription ? 0.0 : _deliveryCharge);
             // If unique code is applied, order is free
             if (_uniqueCodeApplied) finalAmount = 0.0;
