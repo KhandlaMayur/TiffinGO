@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/order_provider.dart';
@@ -57,61 +59,95 @@ class TiffineServicesList extends StatelessWidget {
     },
   ];
 
-  List<Map<String, dynamic>> get _filteredServices {
+  List<Map<String, dynamic>> _filterServices(
+      List<Map<String, dynamic>> services) {
     if (searchQuery.isEmpty) {
-      return _services;
+      return services;
     }
-    return _services.where((service) {
+    final query = searchQuery.toLowerCase();
+    return services.where((service) {
       final name = service['name'].toString().toLowerCase();
       final description = service['description'].toString().toLowerCase();
-      final query = searchQuery.toLowerCase();
       return name.contains(query) || description.contains(query);
     }).toList();
   }
 
   @override
   Widget build(BuildContext context) {
-    final filteredServices = _filteredServices;
+    return StreamBuilder<QuerySnapshot>(
+      stream:
+          FirebaseFirestore.instance.collection('tiffin_services').snapshots(),
+      builder: (context, snapshot) {
+        List<Map<String, dynamic>> services = [];
 
-    if (filteredServices.isEmpty && searchQuery.isNotEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.search_off,
-              size: 64,
-              color: Colors.grey[400],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No Tiffine Service Available',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey[600],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Try searching with different keywords',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[500],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
+        if (snapshot.hasData) {
+          services = snapshot.data!.docs.where((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            return data['isClosed'] != true;
+          }).map((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            return {
+              'id': doc.id,
+              'name': data['serviceName'] ?? data['name'] ?? 'Tiffin Service',
+              'description': data['address'] ?? data['description'] ?? '',
+              'rating': data['rating'] ?? 4.5,
+              'deliveryTime':
+                  data['availableTime'] ?? data['deliveryTime'] ?? '',
+              'price': data['price'] ?? data['priceRange'] ?? '₹150-₹300',
+              'image': data['image'] ?? 'assets/images/kathiyavadi.jpg',
+              ...data,
+            };
+          }).toList();
+        }
 
-    return ListView.builder(
-      controller: scrollController,
-      padding: const EdgeInsets.all(16),
-      itemCount: filteredServices.length,
-      itemBuilder: (context, index) {
-        final service = filteredServices[index];
-        return _buildServiceCard(context, service, index);
+        // Fallback to built-in list when Firestore has no documents.
+        if (services.isEmpty) {
+          services = _services;
+        }
+
+        final filteredServices = _filterServices(services);
+
+        if (filteredServices.isEmpty && searchQuery.isNotEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.search_off,
+                  size: 64,
+                  color: Colors.grey[400],
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'No Tiffine Service Available',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Try searching with different keywords',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[500],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          controller: scrollController,
+          padding: const EdgeInsets.all(16),
+          itemCount: filteredServices.length,
+          itemBuilder: (context, index) {
+            final service = filteredServices[index];
+            return _buildServiceCard(context, service, index);
+          },
+        );
       },
     );
   }
@@ -399,7 +435,12 @@ class _TiffinMenuScreenState extends State<TiffinMenuScreen> {
   final Map<String, int> _selectedExtraFood = {}; // Changed to track quantities
   double _totalPrice = 0.0;
 
-  late final List<MealPlan> _mealPlans;
+  late List<MealPlan> _mealPlans;
+
+  Map<String, Map<String, double>>? _servicePriceOverrides;
+
+  bool _isLoadingServiceConfig = true;
+  StreamSubscription<DocumentSnapshot>? _serviceSub;
 
   @override
   void initState() {
@@ -410,8 +451,129 @@ class _TiffinMenuScreenState extends State<TiffinMenuScreen> {
 
     // Get meal plans from data file
     _mealPlans = MealPlansData.getVegMealPlans(widget.service['id']);
-    // prefetch firestore menu data so details screen can load quickly
+
+    // Load any price overrides that seller has saved for this service.
+    _loadServicePriceOverrides();
+
+    // Prefetch Firestore menu data so details screen can load quickly
     MealPlansData.loadData();
+    _calculateTotal();
+  }
+
+  @override
+  void dispose() {
+    _serviceSub?.cancel();
+    super.dispose();
+  }
+
+  void _loadServicePriceOverrides() {
+    try {
+      _serviceSub = FirebaseFirestore.instance
+          .collection('tiffin_services')
+          .doc(widget.service['id'])
+          .snapshots()
+          .listen((doc) {
+        if (!doc.exists) {
+          if (mounted) {
+            setState(() {
+              _isLoadingServiceConfig = false;
+              _mealPlans = [];
+            });
+          }
+          return;
+        }
+
+        final data = doc.data();
+        if (data == null) {
+          if (mounted) {
+            setState(() {
+              _isLoadingServiceConfig = false;
+              _mealPlans = [];
+            });
+          }
+          return;
+        }
+
+        // Get base meal plans from data file each time so they don't compound overrides
+        var baseMealPlans = MealPlansData.getVegMealPlans(widget.service['id']);
+
+        // Filter available meal plans to those the seller has enabled.
+        final allowedTypes =
+            (data['tiffinTypes'] as List<dynamic>?)?.cast<String>() ?? [];
+        if (allowedTypes.isNotEmpty) {
+          _mealPlans = baseMealPlans
+              .where((plan) => allowedTypes.contains(plan.id))
+              .toList();
+        } else {
+          _mealPlans = [];
+        }
+
+        final prices = data['prices'] as Map<String, dynamic>?;
+        if (prices != null) {
+          // Convert nested maps to double values and apply to meal plans
+          _servicePriceOverrides = {};
+          prices.forEach((planId, planData) {
+            if (planData is Map<String, dynamic>) {
+              final veg = (planData['veg'] is num)
+                  ? (planData['veg'] as num).toDouble()
+                  : null;
+              final jain = (planData['jain'] is num)
+                  ? (planData['jain'] as num).toDouble()
+                  : null;
+              _servicePriceOverrides![planId] = {
+                'veg': veg ?? 0.0,
+                'jain': jain ?? 0.0,
+              };
+            }
+          });
+
+          _applyPriceOverrides();
+        }
+
+        if (mounted) {
+          setState(() {
+            _isLoadingServiceConfig = false;
+          });
+        }
+      }, onError: (error) {
+        debugPrint('Failed to listen to service prices: $error');
+        if (mounted) {
+          setState(() {
+            _isLoadingServiceConfig = false;
+          });
+        }
+      });
+    } catch (e) {
+      debugPrint('Error starting prices stream: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingServiceConfig = false;
+        });
+      }
+    }
+  }
+
+  void _applyPriceOverrides() {
+    if (_servicePriceOverrides == null) return;
+
+    _mealPlans = _mealPlans.map((plan) {
+      final overrides = _servicePriceOverrides![plan.id];
+      if (overrides == null) return plan;
+
+      return MealPlan(
+        id: plan.id,
+        name: plan.name,
+        description: plan.description,
+        prices: {
+          'veg': overrides['veg'] ?? plan.prices['veg'] ?? 0.0,
+          'jain': overrides['jain'] ?? plan.prices['jain'] ?? 0.0,
+        },
+        specialOffer: plan.specialOffer,
+        contents: plan.contents,
+        extraFoodItems: plan.extraFoodItems,
+      );
+    }).toList();
+
     _calculateTotal();
   }
 
@@ -580,10 +742,48 @@ class _TiffinMenuScreenState extends State<TiffinMenuScreen> {
 
   @override
   Widget build(BuildContext context) {
+    const navy = Color(0xFF1E3A8A);
+
+    if (_isLoadingServiceConfig) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(widget.service['name']),
+          backgroundColor: navy,
+          foregroundColor: Colors.white,
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_mealPlans.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(widget.service['name']),
+          backgroundColor: navy,
+          foregroundColor: Colors.white,
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: const [
+                Text(
+                  'This service has not enabled any meal plans yet. Please check back later or contact the provider.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.service['name']),
-        backgroundColor: const Color(0xFF1E3A8A),
+        backgroundColor: navy,
         foregroundColor: Colors.white,
       ),
       body: Column(
@@ -669,22 +869,11 @@ class _TiffinMenuScreenState extends State<TiffinMenuScreen> {
                           final label =
                               day[0].toUpperCase() + day.substring(1, 3);
                           return GestureDetector(
-                            onTap: isToday
-                                ? () {
-                                    setState(() {
-                                      _selectedDay = day;
-                                    });
-                                  }
-                                : () {
-                                    // Day is locked - show a brief message
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                            '$label is locked. Only today ( ${_todayDay[0].toUpperCase() + _todayDay.substring(1)} ) is available.'),
-                                        duration: const Duration(seconds: 2),
-                                      ),
-                                    );
-                                  },
+                            onTap: () {
+                              setState(() {
+                                _selectedDay = day;
+                              });
+                            },
                             child: Container(
                               margin: const EdgeInsets.symmetric(horizontal: 6),
                               padding: const EdgeInsets.symmetric(
@@ -713,20 +902,10 @@ class _TiffinMenuScreenState extends State<TiffinMenuScreen> {
                                       style: TextStyle(
                                         color: isSelected
                                             ? Colors.white
-                                            : isToday
-                                                ? Colors.grey[800]
-                                                : Colors.grey[500],
+                                            : Colors.grey[800],
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
-                                    if (!isToday) ...[
-                                      const SizedBox(width: 6),
-                                      const Icon(
-                                        Icons.lock,
-                                        size: 14,
-                                        color: Colors.grey,
-                                      ),
-                                    ]
                                   ],
                                 ),
                               ),
@@ -780,39 +959,58 @@ class _TiffinMenuScreenState extends State<TiffinMenuScreen> {
                   ),
                 ],
               ),
-              child: ElevatedButton(
-                onPressed: () {
-                  _showOrderConfirmation();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1E3A8A),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text(
-                      'Order Now',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+              child: _selectedDay == _todayDay
+                  ? ElevatedButton(
+                      onPressed: () {
+                        _showOrderConfirmation();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1E3A8A),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text(
+                            'Order Now',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '₹${_totalPrice.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ElevatedButton(
+                      onPressed: null, // Disabled
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.grey[300],
+                        foregroundColor: Colors.grey[600],
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Text(
+                        'Orders only available for today',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '₹${_totalPrice.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             )
           : null,
     );
@@ -883,11 +1081,24 @@ class _TiffinMenuScreenState extends State<TiffinMenuScreen> {
               '🔵 Fetching menu: ${widget.service['id']} / $_selectedMealType / ${plan.id} / $day');
 
           final menu = await MealPlansData.getDailyMenu(
-              widget.service['id'], _selectedMealType!, plan.id, day);
+              widget.service['id'], _selectedMealType!, plan.id, day,
+              forceRefresh: true);
 
           debugPrint('🟢 Menu fetched: $menu');
 
           if (!mounted) return;
+
+          if (menu.isEmpty) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Menu will be available soon. Please check back later.',
+                ),
+                backgroundColor: Colors.orange,
+              ),
+            );
+            return;
+          }
 
           Navigator.push(
             context,

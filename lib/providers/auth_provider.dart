@@ -95,8 +95,8 @@ class AuthProvider with ChangeNotifier {
     try {
       final user = _registeredUsers.firstWhere(
         (user) => user.email == email.toLowerCase(),
-        orElse: () =>
-            UserModel(fullName: '', email: '', contact: '', password: ''),
+        orElse: () => UserModel(
+            fullName: '', email: '', contact: '', password: '', role: 'user'),
       );
 
       if (user.email.isEmpty) {
@@ -121,8 +121,8 @@ class AuthProvider with ChangeNotifier {
     final user = _registeredUsers.firstWhere(
       (user) =>
           (user.email == emailOrContact || user.contact == emailOrContact),
-      orElse: () =>
-          UserModel(fullName: '', email: '', contact: '', password: ''),
+      orElse: () => UserModel(
+          fullName: '', email: '', contact: '', password: '', role: 'user'),
     );
 
     if (user.email.isEmpty) {
@@ -155,6 +155,7 @@ class AuthProvider with ChangeNotifier {
         email: email,
         contact: contact,
         password: _currentUser!.password,
+        role: _currentUser?.role ?? 'user',
       );
 
       // Update in registered users list

@@ -100,6 +100,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
               pendingUser.password,
               pendingUser.fullName,
               phone: pendingUser.contact,
+              extraFields: {'role': pendingUser.role},
             );
 
             // mark as verified in local provider

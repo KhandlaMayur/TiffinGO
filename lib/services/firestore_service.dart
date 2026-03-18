@@ -63,12 +63,20 @@ class FirestoreService {
     final raw = doc.data();
     if (raw == null) return null;
 
+    final combinedData = <String, dynamic>{};
+
     if (raw.containsKey('data') && raw['data'] is Map<String, dynamic>) {
-      return raw['data'] as Map<String, dynamic>;
+      combinedData.addAll(raw['data'] as Map<String, dynamic>);
     }
 
-    // if the document itself is the map we need
-    return raw.cast<String, dynamic>();
+    // Add root level keys (which represent individual service IDs added by sellers)
+    raw.forEach((key, value) {
+      if (key != 'data') {
+        combinedData[key] = value;
+      }
+    });
+
+    return combinedData;
   }
 
   Future<void> uploadMealPlansData() async {

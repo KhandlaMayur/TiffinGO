@@ -3,9 +3,10 @@ import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/firebase_auth_provider.dart';
-import 'register_screen.dart';
-import 'otp_verification_screen.dart';
 import '../landing_screen.dart';
+import '../seller/seller_dashboard_screen.dart';
+import '../seller/seller_service_form_screen.dart';
+import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -37,6 +38,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
 
   String? _emailError;
+  String _selectedRole = 'user';
   bool _isLoading = false;
 
   @override
@@ -76,10 +78,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
     String? emailToLogin;
 
+    final collectionName = _selectedRole.toLowerCase() == 'seller'
+        ? 'seller_register'
+        : 'user_register';
+
     // If the user entered a phone number (digits only), try to lookup email in Firestore
     if (RegExp(r'^[0-9]+$').hasMatch(emailOrContact)) {
       final snap = await FirebaseFirestore.instance
-          .collection('user_register')
+          .collection(collectionName)
           .where('phone', isEqualTo: emailOrContact)
           .limit(1)
           .get();
@@ -113,8 +119,32 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
+    // Verify registration in the appropriate collection before proceeding
+    final sellerSnap = await FirebaseFirestore.instance
+        .collection(collectionName)
+        .where('email', isEqualTo: emailToLogin)
+        .limit(1)
+        .get();
+
+    if (sellerSnap.docs.isEmpty ||
+        (sellerSnap.docs.first.data()['role'] as String?)?.toLowerCase() !=
+            _selectedRole.toLowerCase()) {
+      setState(() {
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Not registered as ${_selectedRole}. Please register first.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     try {
-      final user = await firebaseAuth.loginWithEmail(emailToLogin, password);
+      final user = await firebaseAuth.loginWithEmail(emailToLogin, password,
+          role: _selectedRole);
 
       setState(() {
         _isLoading = false;
@@ -144,10 +174,56 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      // All checks passed -> go to landing page
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const LandingScreen()),
-      );
+      // Determine the correct landing for this user
+      final userDoc = await FirebaseFirestore.instance
+          .collection(collectionName)
+          .doc(user.uid)
+          .get();
+      final role =
+          (userDoc.data()?['role'] as String?)?.toLowerCase() ?? 'user';
+
+      if (role == 'seller') {
+        // Check if seller already added a tiffin service
+        var serviceDoc = await FirebaseFirestore.instance
+            .collection('tiffin_services')
+            .doc(user.uid)
+            .get();
+
+        if (!serviceDoc.exists) {
+          final query = await FirebaseFirestore.instance
+              .collection('tiffin_services')
+              .where('ownerId', isEqualTo: user.uid)
+              .limit(1)
+              .get();
+          if (query.docs.isNotEmpty) {
+            serviceDoc = query.docs.first;
+          }
+        }
+
+        if (!serviceDoc.exists) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => SellerServiceFormScreen(
+                userId: user.uid,
+                userName: userDoc.data()?['name'] as String? ?? '',
+                userPhone: userDoc.data()?['phone'] as String?,
+              ),
+            ),
+          );
+        } else {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => SellerDashboardScreen(
+                serviceId: serviceDoc.id,
+              ),
+            ),
+          );
+        }
+      } else {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const LandingScreen()),
+        );
+      }
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -239,6 +315,40 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                               ),
                               const SizedBox(height: 24),
+                              DropdownButtonFormField<String>(
+                                value: _selectedRole,
+                                decoration: InputDecoration(
+                                  hintText: 'Select Role',
+                                  prefixIcon: Icon(Icons.person,
+                                      color: Colors.grey[400]),
+                                  filled: true,
+                                  fillColor: Colors.grey[100],
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(30),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(30),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                ),
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'user',
+                                    child: Text('User'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'seller',
+                                    child: Text('Seller'),
+                                  ),
+                                ],
+                                onChanged: (value) {
+                                  if (value != null) {
+                                    setState(() => _selectedRole = value);
+                                  }
+                                },
+                              ),
+                              const SizedBox(height: 12),
                               TextFormField(
                                 controller: _emailController,
                                 decoration: InputDecoration(

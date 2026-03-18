@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -84,21 +84,42 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
 
         if (doc.exists) {
           final data = doc.data();
-          final lat = (data?['latitude'] as num?)?.toDouble();
-          final lng = (data?['longitude'] as num?)?.toDouble();
+          double? lat = (data?['latitude'] as num?)?.toDouble();
+          double? lng = (data?['longitude'] as num?)?.toDouble();
 
-          debugPrint('✅ Found by serviceId: Lat=$lat, Lng=$lng');
-
-          setState(() {
-            _serviceLatitude = lat;
-            _serviceLongitude = lng;
-          });
-
-          // Recalculate distance if location is already available
-          if (_currentPosition != null && lat != null && lng != null) {
-            _recalculateDeliveryCharge();
+          // If latitude/longitude is missing, fallback to geocoding the address
+          if ((lat == null || lng == null) && data?['address'] != null) {
+            String addressStr = data!['address'] as String;
+            if (addressStr.trim().isNotEmpty) {
+              try {
+                final locations = await locationFromAddress(addressStr);
+                if (locations.isNotEmpty) {
+                  lat = locations.first.latitude;
+                  lng = locations.first.longitude;
+                  debugPrint('✅ Geocoded address: Lat=$lat, Lng=$lng');
+                }
+              } catch (e) {
+                debugPrint('❌ Geocoding error for address "$addressStr": $e');
+              }
+            }
           }
-          return;
+
+          if (lat != null && lng != null) {
+            debugPrint('✅ Found by serviceId: Lat=$lat, Lng=$lng');
+
+            setState(() {
+              _serviceLatitude = lat;
+              _serviceLongitude = lng;
+            });
+
+            // Recalculate distance if location is already available
+            if (_currentPosition != null) {
+              _recalculateDeliveryCharge();
+            }
+            return;
+          } else {
+            debugPrint('⚠️ Falling back since coordinates still missing.');
+          }
         } else {
           debugPrint(
               '❌ Document not found for serviceId: ${widget.order.serviceId}');
@@ -115,19 +136,38 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
 
       if (querySnapshot.docs.isNotEmpty) {
         final data = querySnapshot.docs.first.data();
-        final lat = (data['latitude'] as num?)?.toDouble();
-        final lng = (data['longitude'] as num?)?.toDouble();
+        double? lat = (data['latitude'] as num?)?.toDouble();
+        double? lng = (data['longitude'] as num?)?.toDouble();
 
-        debugPrint('✅ Found by name: Lat=$lat, Lng=$lng');
+        if ((lat == null || lng == null) && data['address'] != null) {
+          String addressStr = data['address'] as String;
+          if (addressStr.trim().isNotEmpty) {
+            try {
+              final locations = await locationFromAddress(addressStr);
+              if (locations.isNotEmpty) {
+                lat = locations.first.latitude;
+                lng = locations.first.longitude;
+              }
+            } catch (e) {
+              // Ignore
+            }
+          }
+        }
 
-        setState(() {
-          _serviceLatitude = lat;
-          _serviceLongitude = lng;
-        });
+        if (lat != null && lng != null) {
+          debugPrint('✅ Found by name: Lat=$lat, Lng=$lng');
 
-        // Recalculate distance if location is already available
-        if (_currentPosition != null && lat != null && lng != null) {
-          _recalculateDeliveryCharge();
+          setState(() {
+            _serviceLatitude = lat;
+            _serviceLongitude = lng;
+          });
+
+          // Recalculate distance if location is already available
+          if (_currentPosition != null) {
+            _recalculateDeliveryCharge();
+          }
+        } else {
+          debugPrint('⚠️ Falling back since coordinates still missing.');
         }
       } else {
         debugPrint(
@@ -1038,12 +1078,14 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
           final updatedOrder = OrderModel(
             id: widget.order.id,
             serviceName: widget.order.serviceName,
+            serviceId: widget.order.serviceId,
             date: widget.order.date,
             amount: finalAmount,
             status: 'Preparing',
             paymentMethod: _selectedPaymentMethod,
             mealType: widget.order.mealType,
             mealPlan: widget.order.mealPlan,
+            categoryId: widget.order.categoryId,
             subscription: widget.order.subscription,
             extraFood: widget.order.extraFood,
             // Build a robust location map: prefer selected address and current GPS,
@@ -1073,6 +1115,15 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
               return finalLocation;
             })(),
             paymentCompleted: true,
+            deliveryCharge: hasActiveSubscription ? 0.0 : _deliveryCharge,
+            distanceInKm: _distanceInKm,
+            sellerLocation:
+                _serviceLatitude != null && _serviceLongitude != null
+                    ? {
+                        'latitude': _serviceLatitude,
+                        'longitude': _serviceLongitude,
+                      }
+                    : null,
           );
 
           // Save locally
@@ -1253,16 +1304,26 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
         final updatedOrder = OrderModel(
           id: widget.order.id,
           serviceName: widget.order.serviceName,
+          serviceId: widget.order.serviceId,
           date: widget.order.date,
           amount: finalAmount,
           status: 'Preparing',
           paymentMethod: _selectedPaymentMethod,
           mealType: widget.order.mealType,
           mealPlan: widget.order.mealPlan,
+          categoryId: widget.order.categoryId,
           subscription: widget.order.subscription,
           extraFood: widget.order.extraFood,
           location: widget.order.location,
           paymentCompleted: true,
+          deliveryCharge: hasActiveSubscription ? 0.0 : _deliveryCharge,
+          distanceInKm: _distanceInKm,
+          sellerLocation: _serviceLatitude != null && _serviceLongitude != null
+              ? {
+                  'latitude': _serviceLatitude,
+                  'longitude': _serviceLongitude,
+                }
+              : null,
         );
 
         orderProvider.updateOrderStatus(widget.order.id, 'Preparing');
@@ -1368,6 +1429,15 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
                 return finalLocation;
               })(),
               paymentCompleted: false,
+              deliveryCharge: hasActiveSubscription ? 0.0 : _deliveryCharge,
+              distanceInKm: _distanceInKm,
+              sellerLocation:
+                  _serviceLatitude != null && _serviceLongitude != null
+                      ? {
+                          'latitude': _serviceLatitude,
+                          'longitude': _serviceLongitude,
+                        }
+                      : null,
             );
 
             // Save locally

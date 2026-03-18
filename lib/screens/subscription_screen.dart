@@ -11,6 +11,9 @@ import '../providers/subscription_provider.dart';
 import '../providers/auth_provider.dart';
 import '../models/subscription_model.dart';
 import 'subscription_invoice_screen.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
+import '../data/meal_plans_data.dart';
 
 class SubscriptionScreen extends StatefulWidget {
   final Map<String, dynamic>? service; // Optional service to pre-fill
@@ -48,6 +51,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   bool _paymentCompleted = false;
   bool _isFirstTimeUser = true; // Check if user is first time
   double _totalPrice = 0.0;
+  double _subtotalPrice = 0.0;
+  double _gstCost = 0.0;
+  double _deliveryCost = 0.0;
+  bool _calculatingDelivery = false;
 
   final List<Map<String, dynamic>> _subscriptionTypes = [
     {'id': 'daily', 'name': 'Daily', 'days': 1, 'discount': 0},
@@ -62,7 +69,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     {'id': 'rajwadi', 'name': 'Rajwadi Tiffine Service'},
   ];
 
-  final List<Map<String, dynamic>> _categories = [
+  List<Map<String, dynamic>> _categories = [
     {'id': 'normal', 'name': 'Normal Tiffine', 'basePrice': 100},
     {'id': 'premium', 'name': 'Premium Tiffine', 'basePrice': 150},
     {'id': 'deluxe', 'name': 'Deluxe Tiffine', 'basePrice': 200},
@@ -82,12 +89,123 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   void _ensurePrefill() {
     if (widget.service != null) {
       final svc = widget.service!;
+      final id = svc['id']?.toString();
+
+      if (id != null) {
+        // Check if it exists in _tiffineServices
+        final exists = _tiffineServices.any((s) => s['id'] == id);
+        if (!exists) {
+          _tiffineServices.add({
+            'id': id,
+            'name': svc['name'] ?? svc['serviceName'] ?? 'Custom Tiffine Service',
+          });
+        }
+      }
+
+      // Filter categories to only those provided by this seller
+      final offeredTypes = (svc['tiffinTypes'] as List<dynamic>?)?.cast<String>() ?? [];
+      if (offeredTypes.isNotEmpty) {
+        _categories.removeWhere((cat) {
+          final cid = cat['id'] == 'gym/diet' ? 'gym_diet' : cat['id'];
+          return !offeredTypes.contains(cid);
+        });
+      }
+
       setState(() {
-        _selectedTiffineService = svc['id']?.toString();
-        _selectedCategory = svc['category']?.toString();
-        _selectedMealType = svc['mealType']?.toString();
+        _selectedTiffineService = id;
+        
+        final cat = svc['category']?.toString();
+        _selectedCategory = _categories.any((c) => c['id'] == cat) ? cat : null;
+
+        final meal = svc['mealType']?.toString();
+        if (svc['jainVeg'] == true) {
+          _selectedMealType = (meal == 'veg' || meal == 'jain') ? meal : null;
+        } else {
+          _selectedMealType = 'veg'; // Default to veg if jain not offered
+        }
+        
         _calculateTotal();
       });
+      
+      _calculateDeliveryCostAsync();
+    }
+  }
+
+  Future<void> _calculateDeliveryCostAsync() async {
+    if (_selectedTiffineService == null) return;
+
+    setState(() => _calculatingDelivery = true);
+
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) throw 'Location services disabled';
+      
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) throw 'Permission denied';
+      }
+      if (permission == LocationPermission.deniedForever) throw 'Permission denied forever';
+
+      final userLoc = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      
+      // Fetch seller location from firestore using _selectedTiffineService
+      final doc = await FirebaseFirestore.instance.collection('tiffin_services').doc(_selectedTiffineService).get();
+      if (!doc.exists) throw 'Seller not found';
+      final data = doc.data()!;
+      
+      double? sellerLat = (data['latitude'] as num?)?.toDouble();
+      double? sellerLng = (data['longitude'] as num?)?.toDouble();
+      
+      if (sellerLat == null || sellerLng == null) {
+        // Try geocoding the address provided by the seller
+        if (data['address'] != null && (data['address'] as String).trim().isNotEmpty) {
+          try {
+            final locations = await locationFromAddress(data['address']);
+            if (locations.isNotEmpty) {
+              sellerLat = locations.first.latitude;
+              sellerLng = locations.first.longitude;
+            }
+          } catch (_) {
+            // Geocoding failed
+          }
+        }
+        
+        // Final fallback if everything fails
+        if (sellerLat == null || sellerLng == null) {
+          final idLower = _selectedTiffineService!.toLowerCase();
+          if (idLower.contains('kathiyavadi')) { sellerLat = 22.2953; sellerLng = 70.8000; }
+          else if (idLower.contains('nani')) { sellerLat = 22.2964; sellerLng = 70.7903; }
+          else if (idLower.contains('rajwadi')) { sellerLat = 22.3248; sellerLng = 70.7720; }
+          else if (idLower.contains('desi')) { sellerLat = 22.34; sellerLng = 70.80; }
+          else throw 'Seller location missing';
+        }
+      }
+      
+      final distanceMeters = Geolocator.distanceBetween(
+        userLoc.latitude, userLoc.longitude,
+        sellerLat, sellerLng,
+      );
+      final distanceKm = distanceMeters / 1000;
+        
+      double calculated = distanceKm * 5; // ₹5 per km (as requested)
+
+      if (mounted) {
+        setState(() {
+          _deliveryCost = calculated;
+          _calculateTotal();
+        });
+      }
+    } catch (e) {
+      debugPrint('Delivery calc error: $e');
+      if (mounted) {
+        setState(() {
+          _deliveryCost = 0.0; // Fallback to 0 if we can't calculate
+          _calculateTotal();
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _calculatingDelivery = false);
     }
   }
 
@@ -196,14 +314,28 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     );
 
     double basePrice = category['basePrice'].toDouble();
-    if (_selectedMealType == 'jain') {
-      basePrice += 10; // Jain meals cost 10 more
+    if (widget.service != null && widget.service!['prices'] != null) {
+      final pricesMap = widget.service!['prices'] as Map<String, dynamic>;
+      final mappedCategoryId = _selectedCategory == 'gym/diet' ? 'gym_diet' : _selectedCategory;
+      final catPrices = pricesMap[mappedCategoryId] as Map<String, dynamic>?;
+      if (catPrices != null) {
+        final planPrice = catPrices[_selectedMealType];
+        if (planPrice != null) {
+          basePrice = (planPrice as num).toDouble();
+        }
+      }
+    } else {
+      if (_selectedMealType == 'jain') {
+        basePrice += 10; // Jain meals cost extra normally
+      }
     }
 
     double price = basePrice * subscription['days'];
 
-    // multiply by quantity per day
-    price = price * _quantity;
+    // multiply by quantity per day and the number of meal periods
+    final periodsCount = _selectedMealPeriods.values.where((v) => v).length;
+    final multiplier = periodsCount > 0 ? periodsCount : 1;
+    price = price * _quantity * multiplier;
 
     // add extra orders (charged at basePrice each)
     price += (_extraOrders * basePrice);
@@ -216,8 +348,13 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       price = price * 0.9; // 10% discount for first-time users
     }
 
+    final subtotal = price;
+    final gst = subtotal * 0.05; // 5% GST on food
+
     setState(() {
-      _totalPrice = price;
+      _subtotalPrice = subtotal;
+      _gstCost = gst;
+      _totalPrice = subtotal + gst + _deliveryCost;
     });
   }
 
@@ -431,17 +568,19 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
             ),
 
             // Tiffine Service Selection (choose service first)
-            const Text(
-              'Select Tiffine Service',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1E3A8A),
+            if (widget.service == null) ...[
+              const Text(
+                'Select Tiffine Service',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1E3A8A),
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            _buildTiffineServiceDropdown(),
-            const SizedBox(height: 24),
+              const SizedBox(height: 12),
+              _buildTiffineServiceDropdown(),
+              const SizedBox(height: 24),
+            ],
 
             // Subscription Type Selection (Dropdown) - shown after service selected
             if (_selectedTiffineService != null) ...[
@@ -459,7 +598,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
             ],
 
             // Meal Type Selection
-            if (_selectedSubscriptionType != null) ...[
+            if (_selectedSubscriptionType != null && widget.service?['jainVeg'] == true) ...[
               const Text(
                 'Select Meal Type',
                 style: TextStyle(
@@ -516,27 +655,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 
             // Payment Section
             if (_totalPrice > 0) ...[
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.currency_rupee, color: Colors.green),
-                    Text(
-                      _totalPrice.toStringAsFixed(2),
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.green,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              _buildPricingSummary(),
               const SizedBox(height: 24),
               _buildPaymentMethodSelection(),
               const SizedBox(height: 24),
@@ -649,7 +768,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                   setState(() {
                     _selectedSubscriptionType = value;
                     _selectedCategory = null;
-                    _selectedMealType = null;
+                    if (widget.service?['jainVeg'] == true) {
+                      _selectedMealType = null;
+                    } else {
+                      _selectedMealType = 'veg';
+                    }
                     _calculateTotal();
                   });
                 }
@@ -699,85 +822,164 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     );
   }
 
+  void _showMenuDetailsDialog(String categoryId) {
+    if (_selectedTiffineService == null || _selectedMealType == null) return;
+    
+    showDialog(
+      context: context,
+      builder: (context) {
+        return _MenuDetailsDialog(
+          serviceId: _selectedTiffineService!,
+          menuType: _selectedMealType!,
+          planType: categoryId == 'gym/diet' ? 'gym_diet' : categoryId,
+        );
+      },
+    );
+  }
+
   Widget _buildCategoryDropdown() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: const Color(0xFF1E3A8A),
-              width: 2,
-            ),
-            color: Colors.white,
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF1E3A8A).withOpacity(0.1),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
+    return Column(
+      children: _categories.map((category) {
+        final isSelected = _selectedCategory == category['id'];
+        return GestureDetector(
+          onTap: () {
+            setState(() {
+              _selectedCategory = category['id'];
+              _calculateTotal();
+            });
+          },
+          onLongPress: () {
+            _showMenuDetailsDialog(category['id']);
+          },
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: isSelected ? const Color(0xFF1E3A8A) : Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isSelected ? const Color(0xFF1E3A8A) : Colors.grey.shade300,
+                width: 2,
               ),
-            ],
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: _selectedCategory,
-              hint: const Text(
-                'Select Tiffine Category',
-                style: TextStyle(color: Colors.grey),
-              ),
-              isExpanded: true,
-              icon: const Icon(
-                Icons.arrow_drop_down,
-                color: Color(0xFF1E3A8A),
-                size: 28,
-              ),
-              items: _categories.map((category) {
-                return DropdownMenuItem<String>(
-                  value: category['id'],
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            category['name'],
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '₹${category['basePrice']}',
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.green,
-                          ),
-                        ),
-                      ],
-                    ),
+              boxShadow: [
+                if (!isSelected)
+                  BoxShadow(
+                    color: Colors.grey.withOpacity(0.1),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
                   ),
-                );
-              }).toList(),
-              onChanged: (value) {
-                if (value != null) {
-                  setState(() {
-                    _selectedCategory = value;
-                    _calculateTotal();
-                  });
-                }
-              },
+              ],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        category['name'],
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: isSelected ? Colors.white : const Color(0xFF1E3A8A),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Tap to select, Long press for menu',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isSelected ? Colors.white70 : Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Text(
+                  '₹${category['basePrice']}',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: isSelected ? Colors.white : Colors.green,
+                  ),
+                ),
+              ],
             ),
           ),
         );
-      },
+      }).toList(),
+    );
+  }
+
+  Widget _buildPricingSummary() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E3A8A).withOpacity(0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF1E3A8A).withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Order Summary',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF1E3A8A),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Subtotal:', style: TextStyle(fontSize: 16)),
+              Text('₹${_subtotalPrice.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('GST (5%):', style: TextStyle(fontSize: 16)),
+              Text('₹${_gstCost.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Delivery Cost:', style: TextStyle(fontSize: 16)),
+              _calculatingDelivery
+                  ? const SizedBox(
+                      height: 16,
+                      width: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : Text('₹${_deliveryCost.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16)),
+            ],
+          ),
+          const Divider(height: 24, thickness: 1),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Total Payable:',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A)),
+              ),
+              Text(
+                '₹${_totalPrice.toStringAsFixed(2)}',
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.green,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -1569,6 +1771,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                     _selectedTiffineService = value;
                     _calculateTotal();
                   });
+                  _calculateDeliveryCostAsync();
                 }
               },
             ),
@@ -1634,6 +1837,119 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _MenuDetailsDialog extends StatefulWidget {
+  final String serviceId;
+  final String menuType;
+  final String planType;
+
+  const _MenuDetailsDialog({
+    required this.serviceId,
+    required this.menuType,
+    required this.planType,
+  });
+
+  @override
+  State<_MenuDetailsDialog> createState() => _MenuDetailsDialogState();
+}
+
+class _MenuDetailsDialogState extends State<_MenuDetailsDialog> {
+  bool _isLoading = true;
+  Map<String, List<String>> _weeklyMenu = {};
+
+  final List<String> _days = [
+    'monday',
+    'tuesday',
+    'wednesday',
+    'thursday',
+    'friday',
+    'saturday',
+    'sunday'
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchMenu();
+  }
+
+  Future<void> _fetchMenu() async {
+    final Map<String, List<String>> menu = {};
+    for (String day in _days) {
+      final items = await MealPlansData.getDailyMenu(
+        widget.serviceId,
+        widget.menuType, // 'veg' or 'jain'
+        widget.planType, // 'normal', 'premium', etc.
+        day,
+      );
+      menu[day] = items;
+    }
+    
+    if (mounted) {
+      setState(() {
+        _weeklyMenu = menu;
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('${widget.planType.toUpperCase()} Menu (${widget.menuType.toUpperCase()})'),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: 400,
+        child: _isLoading 
+            ? const Center(child: CircularProgressIndicator())
+            : ListView.builder(
+                itemCount: _days.length,
+                itemBuilder: (context, index) {
+                  final day = _days[index];
+                  final items = _weeklyMenu[day] ?? [];
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            day[0].toUpperCase() + day.substring(1),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Color(0xFF1E3A8A),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          items.isEmpty 
+                              ? const Text('No menu specified', style: TextStyle(color: Colors.grey))
+                              : Wrap(
+                                  spacing: 4,
+                                  runSpacing: 4,
+                                  children: items.map((item) => Chip(
+                                    label: Text(item, style: const TextStyle(fontSize: 12)),
+                                    backgroundColor: Colors.blue.withOpacity(0.05),
+                                    side: const BorderSide(color: Colors.blue, width: 0.5),
+                                  )).toList(),
+                                ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
     );
   }
 }

@@ -15,11 +15,17 @@ class FirebaseAuthProvider with ChangeNotifier {
     _authService.authStateChanges().listen((user) async {
       _firebaseUser = user;
       if (user != null) {
-        // load user doc from 'user_register' collection
-        final snap = await FirebaseFirestore.instance
+        // try to load user doc from 'user_register', if not found try 'seller_register'
+        var snap = await FirebaseFirestore.instance
             .collection('user_register')
             .doc(user.uid)
             .get();
+        if (!snap.exists) {
+          snap = await FirebaseFirestore.instance
+              .collection('seller_register')
+              .doc(user.uid)
+              .get();
+        }
         _userDoc = snap.exists ? snap.data() : null;
       } else {
         _userDoc = null;
@@ -40,8 +46,8 @@ class FirebaseAuthProvider with ChangeNotifier {
     return user;
   }
 
-  Future<fb.User?> loginWithEmail(String email, String password) async {
-    final user = await _authService.loginWithEmail(email, password);
+  Future<fb.User?> loginWithEmail(String email, String password, {String role = 'user'}) async {
+    final user = await _authService.loginWithEmail(email, password, role: role);
     return user;
   }
 

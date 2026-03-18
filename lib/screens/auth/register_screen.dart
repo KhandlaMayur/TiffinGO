@@ -42,6 +42,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   String? _contactError;
   String? _passwordError;
   String? _confirmPasswordError;
+  String _selectedRole = 'user';
   bool _isLoading = false;
 
   @override
@@ -159,10 +160,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     final email = _emailController.text.trim();
     final contact = _contactController.text.trim();
+    final collectionName = _selectedRole.toLowerCase() == 'seller'
+        ? 'seller_register'
+        : 'user_register';
 
-    // Check if email already exists in Firestore user_register collection
+    // Check if email already exists in Firestore appropriate collection
     final emailSnap = await FirebaseFirestore.instance
-        .collection('user_register')
+        .collection(collectionName)
         .where('email', isEqualTo: email)
         .limit(1)
         .get();
@@ -181,9 +185,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    // Check if contact already exists in Firestore user_register collection
+    // Check if contact already exists in Firestore appropriate collection
     final contactSnap = await FirebaseFirestore.instance
-        .collection('user_register')
+        .collection(collectionName)
         .where('phone', isEqualTo: contact)
         .limit(1)
         .get();
@@ -207,6 +211,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       email: email,
       contact: contact,
       password: _passwordController.text,
+      role: _selectedRole,
     );
 
     final authProvider = context.read<AuthProvider>();
@@ -325,6 +330,40 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 ),
                               ),
                               const SizedBox(height: 24),
+                              DropdownButtonFormField<String>(
+                                value: _selectedRole,
+                                decoration: InputDecoration(
+                                  hintText: 'Select role',
+                                  prefixIcon: Icon(Icons.group,
+                                      color: Colors.grey[400]),
+                                  filled: true,
+                                  fillColor: Colors.grey[100],
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(30),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(30),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                ),
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'user',
+                                    child: Text('User'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'seller',
+                                    child: Text('Seller'),
+                                  ),
+                                ],
+                                onChanged: (value) {
+                                  if (value != null) {
+                                    setState(() => _selectedRole = value);
+                                  }
+                                },
+                              ),
+                              const SizedBox(height: 12),
                               TextFormField(
                                 controller: _fullNameController,
                                 decoration: InputDecoration(

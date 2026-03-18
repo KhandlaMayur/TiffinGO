@@ -7,18 +7,54 @@ class MealPlansData {
   static Map<String, dynamic>? _dailyMenus;
   static final FirestoreService _firestoreService = FirestoreService();
 
-  static Future<void> loadData() async {
-    if (_dailyMenus != null) return;
+  static Future<void> loadData({bool forceRefresh = false}) async {
+    if (_dailyMenus != null && !forceRefresh) return;
     final data = await _firestoreService.getMealPlansData();
     _dailyMenus = data;
   }
 
   static Future<List<String>> getDailyMenu(
-      String service, String menuType, String planType, String day) async {
-    await loadData();
+      String service, String menuType, String planType, String day,
+      {bool forceRefresh = false}) async {
+    await loadData(forceRefresh: forceRefresh);
+
+    // If the cached data doesn't contain this service, try reloading once.
+    if (_dailyMenus != null && !_dailyMenus!.containsKey(service)) {
+      await loadData(forceRefresh: true);
+    }
+
     try {
       final serviceData = _dailyMenus?[service];
       if (serviceData == null) return [];
+
+      // For the current day, allow sellers to provide a one-day override.
+      // Updating the "standard menu" (today's menu) will write into
+      // mealPlans/menus/{service}/overrides/{YYYY-MM-DD}.
+      final todayKey = DateTime.now().toIso8601String().split('T')[0];
+      final weekdayNames = [
+        'monday',
+        'tuesday',
+        'wednesday',
+        'thursday',
+        'friday',
+        'saturday',
+        'sunday',
+      ];
+      final isToday = day.toLowerCase() ==
+          weekdayNames[DateTime.now().weekday - 1].toLowerCase();
+
+      if (isToday) {
+        final overrides =
+            (serviceData['overrides'] as Map<String, dynamic>?) ?? {};
+        final todayOverride = overrides[todayKey] as Map<String, dynamic>?;
+        final overrideType =
+            (todayOverride?[menuType] as Map<String, dynamic>?) ?? {};
+        final overridePlan = (overrideType[planType] as List<dynamic>?) ?? [];
+
+        if (overridePlan.isNotEmpty) {
+          return overridePlan.cast<String>();
+        }
+      }
 
       final typeData = serviceData[menuType];
       if (typeData == null) return [];

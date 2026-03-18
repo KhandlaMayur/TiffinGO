@@ -20,20 +20,25 @@ class AuthService {
         'isAdmin': false,
       };
       if (extraFields != null) data.addAll(extraFields);
-      // Store registration info in 'user_register' collection
-      await _db.collection('user_register').doc(user.uid).set(data);
+      
+      final role = (extraFields?['role']?.toString().toLowerCase()) ?? 'user';
+      final collectionName = role == 'seller' ? 'seller_register' : 'user_register';
+
+      // Store registration info in appropriate collection
+      await _db.collection(collectionName).doc(user.uid).set(data);
     }
     return user;
   }
 
-  Future<User?> loginWithEmail(String email, String password) async {
+  Future<User?> loginWithEmail(String email, String password, {String role = 'user'}) async {
     final cred = await _auth.signInWithEmailAndPassword(
         email: email, password: password);
     final user = cred.user;
     if (user != null) {
       try {
-        // Store login info in 'user_login' collection
-        await _db.collection('user_login').doc(user.uid).set(
+        final collectionName = role.toLowerCase() == 'seller' ? 'seller_login' : 'user_login';
+        // Store login info in appropriate collection
+        await _db.collection(collectionName).doc(user.uid).set(
           {
             'uid': user.uid,
             'email': email,

@@ -29,8 +29,8 @@ class NetworkProvider with ChangeNotifier {
   final List<NetworkStatusCallback> _statusCallbacks = [];
 
   // Thresholds for network quality assessment
-  static const double _poorThresholdMbps = 0.1; // 100 kbps
-  static const double _criticalThresholdMbps = 0.05; // 50 kbps
+  static const double _poorThresholdMbps = 0.0; // 100 kbps
+  static const double _criticalThresholdMbps = 0.00; // 50 kbps
 
   // Monitoring intervals
   static const Duration _monitoringInterval = Duration(seconds: 10);

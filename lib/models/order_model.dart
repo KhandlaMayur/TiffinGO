@@ -14,6 +14,10 @@ class OrderModel {
   final Map<String, dynamic>? location;
   final bool paymentCompleted;
   final double rating; // 0-5 stars, 0 means not rated
+  final double deliveryCharge; // Delivery charge in rupees
+  final double distanceInKm; // Distance from seller to user in km
+  final Map<String, dynamic>?
+      sellerLocation; // Seller's kitchen location {latitude, longitude}
 
   OrderModel({
     required this.id,
@@ -31,6 +35,9 @@ class OrderModel {
     this.location,
     required this.paymentCompleted,
     this.rating = 0, // Default: not rated
+    this.deliveryCharge = 0.0,
+    this.distanceInKm = 0.0,
+    this.sellerLocation,
   });
 
   Map<String, dynamic> toJson() {
@@ -50,6 +57,9 @@ class OrderModel {
       'location': location,
       'paymentCompleted': paymentCompleted,
       'rating': rating,
+      'deliveryCharge': deliveryCharge,
+      'distanceInKm': distanceInKm,
+      'sellerLocation': sellerLocation,
     };
   }
 
@@ -70,6 +80,9 @@ class OrderModel {
       location: json['location'],
       paymentCompleted: json['paymentCompleted'] ?? false,
       rating: (json['rating'] ?? 0).toDouble(),
+      deliveryCharge: (json['deliveryCharge'] ?? 0).toDouble(),
+      distanceInKm: (json['distanceInKm'] ?? 0).toDouble(),
+      sellerLocation: json['sellerLocation'],
     );
   }
 }

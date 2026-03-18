@@ -49,8 +49,16 @@ class _MealPlanDetailsScreenState extends State<MealPlanDetailsScreen> {
     setState(() {
       _loading = true;
     });
-    final items = await MealPlansData.getDailyMenu(widget.serviceId,
-        widget.mealType, widget.mealPlan.id, widget.selectedDay);
+
+    // Force refresh to ensure latest seller updates are reflected immediately.
+    final items = await MealPlansData.getDailyMenu(
+      widget.serviceId,
+      widget.mealType,
+      widget.mealPlan.id,
+      widget.selectedDay,
+      forceRefresh: true,
+    );
+
     // debug output – will appear in console when running
     debugPrint(
         'loaded menu: ${widget.serviceId}/${widget.mealType}/${widget.mealPlan.id}/${widget.selectedDay} -> $items');

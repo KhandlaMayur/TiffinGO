@@ -35,12 +35,22 @@ class _AdvancedDeliveryTrackingScreenState
   static const LatLng _rajwadi = LatLng(22.3248, 70.7720);
   static const LatLng _desi = LatLng(22.34, 70.80);
 
-  /// Chooses the correct kitchen based on the order's serviceId or name.
+  // Seller location from OrderModel (if available)
+  LatLng? _sellerLocationFromOrder;
+
+  /// Chooses the correct kitchen based on the order's sellerLocation, serviceId or name.
   ///
+  /// Prefers `sellerLocation` from order if available, otherwise
   /// `serviceId` is preferred since it is likely to be a stable identifier;
   /// otherwise the code falls back to checking substrings in the human-readable
   /// `serviceName`.  Defaults to Kathiyavadi if nothing matches.
   LatLng get _selectedKitchen {
+    // Priority 1: Use seller location from order if available
+    if (_sellerLocationFromOrder != null) {
+      return _sellerLocationFromOrder!;
+    }
+
+    // Priority 2: Use service ID
     final id = widget.order.serviceId?.toLowerCase();
     if (id != null) {
       if (id.contains('kathiyavadi')) return _kathiyavadi;
@@ -48,6 +58,8 @@ class _AdvancedDeliveryTrackingScreenState
       if (id.contains('rajwadi')) return _rajwadi;
       if (id.contains('desi')) return _desi;
     }
+
+    // Priority 3: Use service name
     final name = widget.order.serviceName.toLowerCase();
     if (name.contains('kathiyavadi')) return _kathiyavadi;
     if (name.contains('nani')) return _nani;
@@ -78,6 +90,19 @@ class _AdvancedDeliveryTrackingScreenState
   void initState() {
     super.initState();
     _mapController = MapController();
+
+    // Extract seller location from order if available
+    if (widget.order.sellerLocation != null) {
+      final lat =
+          (widget.order.sellerLocation!['latitude'] as num?)?.toDouble();
+      final lng =
+          (widget.order.sellerLocation!['longitude'] as num?)?.toDouble();
+      if (lat != null && lng != null) {
+        _sellerLocationFromOrder = LatLng(lat, lng);
+        debugPrint('✅ Seller location from order: ($_sellerLocationFromOrder)');
+      }
+    }
+
     _initLocationAndRoute();
     _simulateDeliveryProgress();
   }
@@ -663,6 +688,28 @@ class _AdvancedDeliveryTrackingScreenState
                 _buildDetailRow('Meal Type', widget.order.mealType),
                 _buildDetailRow('Meal Plan', widget.order.mealPlan),
                 _buildDetailRow('Payment', widget.order.paymentMethod),
+                const Divider(height: 16),
+                // Delivery Charge Info
+                Consumer<SubscriptionProvider>(
+                  builder: (context, subscriptionProvider, child) {
+                    final hasActiveSubscription =
+                        subscriptionProvider.hasActiveSubscription;
+                    final deliveryCharge = hasActiveSubscription
+                        ? 0.0
+                        : widget.order.deliveryCharge;
+                    final distance = widget.order.distanceInKm;
+
+                    String deliveryText = distance > 0
+                        ? '₹${deliveryCharge.toStringAsFixed(2)} (${distance.toStringAsFixed(1)} km)'
+                        : '₹${deliveryCharge.toStringAsFixed(2)}';
+
+                    if (hasActiveSubscription) {
+                      deliveryText = 'FREE (Subscribed)';
+                    }
+
+                    return _buildDetailRow('Delivery Charge', deliveryText);
+                  },
+                ),
               ],
             ),
           ),
