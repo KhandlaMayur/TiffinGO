@@ -940,12 +940,19 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
               Text('₹${_subtotalPrice.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16)),
             ],
           ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('SGST (2.5%):', style: TextStyle(fontSize: 16)),
+              Text('₹${(_gstCost / 2).toStringAsFixed(2)}', style: const TextStyle(fontSize: 16)),
+            ],
+          ),
           const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('GST (5%):', style: TextStyle(fontSize: 16)),
-              Text('₹${_gstCost.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16)),
+              const Text('CGST (2.5%):', style: TextStyle(fontSize: 16)),
+              Text('₹${(_gstCost / 2).toStringAsFixed(2)}', style: const TextStyle(fontSize: 16)),
             ],
           ),
           const SizedBox(height: 8),

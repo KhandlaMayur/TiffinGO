@@ -13,6 +13,11 @@ class SubscriptionProvider extends ChangeNotifier {
   bool get hasActiveSubscription =>
       _subscriptionHistory.any((s) => s.isActive && s.isValid);
 
+  bool hasActiveSubscriptionForService(String serviceId) {
+    return _subscriptionHistory.any((s) => 
+        s.isActive && s.isValid && s.tiffineService == serviceId);
+  }
+
   SubscriptionModel? get activeSubscription {
     try {
       return _subscriptionHistory.firstWhere((s) => s.isActive && s.isValid);

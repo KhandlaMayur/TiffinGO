@@ -191,9 +191,9 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
 
       final subscriptionProvider =
           Provider.of<SubscriptionProvider>(context, listen: false);
-      final hasActiveSubscription = subscriptionProvider.hasActiveSubscription;
+      final hasActiveSubscriptionForCurrentService = subscriptionProvider.hasActiveSubscriptionForService(widget.order.serviceId ?? widget.order.serviceName);
 
-      if (hasActiveSubscription) {
+      if (hasActiveSubscriptionForCurrentService) {
         _deliveryCharge = 0.0; // Free delivery for subscribers
         debugPrint('✅ Delivery: FREE (Subscriber)');
       } else {
@@ -375,10 +375,11 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
   void _calculateFinalAmount() {
     final subscriptionProvider =
         Provider.of<SubscriptionProvider>(context, listen: false);
-    final hasActiveSubscription = subscriptionProvider.hasActiveSubscription;
+    final hasActiveSubscriptionForCurrentService = subscriptionProvider.hasActiveSubscriptionForService(widget.order.serviceId ?? widget.order.serviceName);
 
-    if (hasActiveSubscription) {
+    if (hasActiveSubscriptionForCurrentService) {
       _deliveryCharge = 0.0; // Free delivery for subscribers
+      _gstAmount = 0.0;      // Zero GST for existing subscribers
     } else {
       // Use calculated delivery charge based on distance, or default if no location
       if (_distanceInKm > 0) {
@@ -386,12 +387,9 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
       } else {
         _deliveryCharge = 0.0; // No delivery charge if location not available
       }
+      // Calculate GST on meal amount for non-subscribers
+      _gstAmount = _calculateGST(widget.order.amount);
     }
-
-    // Calculate GST on meal amount
-    _gstAmount = _calculateGST(widget.order.amount);
-
-    // Calculate final amount when needed using widget.order.amount + GST + _deliveryCharge
   }
 
   @override
@@ -491,23 +489,30 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
           _buildSummaryRow(
               'Meal Amount', '₹${widget.order.amount.toStringAsFixed(2)}'),
 
-          // GST Section
-          _buildSummaryRow(
-            'GST (18%)',
-            '₹${_gstAmount.toStringAsFixed(2)}',
-            color: Colors.orange,
-          ),
+          // GST Section (Only compute separately if not zero)
+          if (_gstAmount > 0) ...[
+            _buildSummaryRow(
+              'SGST (9%)',
+              '₹${(_gstAmount / 2).toStringAsFixed(2)}',
+              color: Colors.orange,
+            ),
+            _buildSummaryRow(
+              'CGST (9%)',
+              '₹${(_gstAmount / 2).toStringAsFixed(2)}',
+              color: Colors.orange,
+            ),
+          ],
 
           // Delivery Charge with Distance Info
           Consumer<SubscriptionProvider>(
             builder: (context, subscriptionProvider, child) {
-              final hasActiveSubscription =
-                  subscriptionProvider.hasActiveSubscription;
+              final hasActiveSubscriptionForCurrentService =
+                  subscriptionProvider.hasActiveSubscriptionForService(widget.order.serviceId ?? widget.order.serviceName);
 
               String deliveryChargeText;
               Color? deliveryChargeColor;
 
-              if (hasActiveSubscription) {
+              if (hasActiveSubscriptionForCurrentService) {
                 deliveryChargeText = 'FREE (Subscribed)';
                 deliveryChargeColor = Colors.green;
               } else {
@@ -537,11 +542,11 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
               ),
               Consumer<SubscriptionProvider>(
                 builder: (context, subscriptionProvider, child) {
-                  final hasActiveSubscription =
-                      subscriptionProvider.hasActiveSubscription;
+                  final hasActiveSubscriptionForCurrentService =
+                      subscriptionProvider.hasActiveSubscriptionForService(widget.order.serviceId ?? widget.order.serviceName);
                   double mealWithGST = widget.order.amount + _gstAmount;
                   double finalAmount = mealWithGST +
-                      (hasActiveSubscription ? 0.0 : _deliveryCharge);
+                      (hasActiveSubscriptionForCurrentService ? 0.0 : _deliveryCharge);
                   if (_uniqueCodeApplied) finalAmount = 0.0;
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
@@ -834,10 +839,10 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
           const SizedBox(height: 16),
           Consumer<SubscriptionProvider>(
             builder: (context, subscriptionProvider, child) {
-              final hasActiveSubscription =
-                  subscriptionProvider.hasActiveSubscription;
+              final hasActiveSubscriptionForCurrentService =
+                  subscriptionProvider.hasActiveSubscriptionForService(widget.order.serviceId ?? widget.order.serviceName);
               final finalAmount = widget.order.amount +
-                  (hasActiveSubscription ? 0.0 : _deliveryCharge);
+                  (hasActiveSubscriptionForCurrentService ? 0.0 : _deliveryCharge);
 
               // Use provided UPI id (from your attached QR/image)
               const upiId = 'khandlamayur62@okaxis';
@@ -887,10 +892,10 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
           const SizedBox(height: 16),
           Consumer<SubscriptionProvider>(
             builder: (context, subscriptionProvider, child) {
-              final hasActiveSubscription =
-                  subscriptionProvider.hasActiveSubscription;
+              final hasActiveSubscriptionForCurrentService =
+                  subscriptionProvider.hasActiveSubscriptionForService(widget.order.serviceId ?? widget.order.serviceName);
               final finalAmount = widget.order.amount +
-                  (hasActiveSubscription ? 0.0 : _deliveryCharge);
+                  (hasActiveSubscriptionForCurrentService ? 0.0 : _deliveryCharge);
               return Text(
                 'Amount: ₹${finalAmount.toStringAsFixed(2)}',
                 style: const TextStyle(
@@ -1027,13 +1032,13 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
         onPressed: () async {
           final subscriptionProvider =
               Provider.of<SubscriptionProvider>(context, listen: false);
-          final hasActiveSubscription =
-              subscriptionProvider.hasActiveSubscription;
+          final hasActiveSubscriptionForCurrentService =
+              subscriptionProvider.hasActiveSubscriptionForService(widget.order.serviceId ?? widget.order.serviceName);
           // Ensure delivery charge (and GST) is included in the final amount.
           // GST is calculated on the meal amount and displayed above.
           var finalAmount = widget.order.amount +
               _gstAmount +
-              (hasActiveSubscription ? 0.0 : _deliveryCharge);
+              (hasActiveSubscriptionForCurrentService ? 0.0 : _deliveryCharge);
           // If unique code is applied, order is free
           if (_uniqueCodeApplied) finalAmount = 0.0;
 
@@ -1077,7 +1082,7 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
               return finalLocation;
             })(),
             paymentCompleted: true,
-            deliveryCharge: hasActiveSubscription ? 0.0 : _deliveryCharge,
+            deliveryCharge: hasActiveSubscriptionForCurrentService ? 0.0 : _deliveryCharge,
             distanceInKm: _distanceInKm,
             sellerLocation:
                 _serviceLatitude != null && _serviceLongitude != null
@@ -1258,10 +1263,10 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
         // Update order with payment status
         final subscriptionProvider =
             Provider.of<SubscriptionProvider>(context, listen: false);
-        final hasActiveSubscription =
-            subscriptionProvider.hasActiveSubscription;
+        final hasActiveSubscriptionForCurrentService =
+            subscriptionProvider.hasActiveSubscriptionForService(widget.order.serviceId ?? widget.order.serviceName);
         final finalAmount = widget.order.amount +
-            (hasActiveSubscription ? 0.0 : _deliveryCharge);
+            (hasActiveSubscriptionForCurrentService ? 0.0 : _deliveryCharge);
 
         final updatedOrder = OrderModel(
           id: widget.order.id,
@@ -1278,7 +1283,7 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
           extraFood: widget.order.extraFood,
           location: widget.order.location,
           paymentCompleted: true,
-          deliveryCharge: hasActiveSubscription ? 0.0 : _deliveryCharge,
+          deliveryCharge: hasActiveSubscriptionForCurrentService ? 0.0 : _deliveryCharge,
           distanceInKm: _distanceInKm,
           sellerLocation: _serviceLatitude != null && _serviceLongitude != null
               ? {
@@ -1342,12 +1347,12 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
 
             final subscriptionProvider =
                 Provider.of<SubscriptionProvider>(context, listen: false);
-            final hasActiveSubscription =
-                subscriptionProvider.hasActiveSubscription;
+            final hasActiveSubscriptionForCurrentService =
+                subscriptionProvider.hasActiveSubscriptionForService(widget.order.serviceId ?? widget.order.serviceName);
             // Ensure GST + delivery charge are included in final amount
             var finalAmount = widget.order.amount +
                 _gstAmount +
-                (hasActiveSubscription ? 0.0 : _deliveryCharge);
+                (hasActiveSubscriptionForCurrentService ? 0.0 : _deliveryCharge);
             // If unique code is applied, order is free
             if (_uniqueCodeApplied) finalAmount = 0.0;
 
@@ -1391,7 +1396,7 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
                 return finalLocation;
               })(),
               paymentCompleted: false,
-              deliveryCharge: hasActiveSubscription ? 0.0 : _deliveryCharge,
+              deliveryCharge: hasActiveSubscriptionForCurrentService ? 0.0 : _deliveryCharge,
               distanceInKm: _distanceInKm,
               sellerLocation:
                   _serviceLatitude != null && _serviceLongitude != null
