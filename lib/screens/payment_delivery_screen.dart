@@ -1135,6 +1135,7 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
               subscriptionProvider.hasActiveSubscriptionForService(widget.order.serviceId ?? widget.order.serviceName);
           // Ensure delivery charge (and GST) is included in the final amount.
           // GST is calculated on the meal amount and displayed above.
+          final double originalAmount = widget.order.amount + _gstAmount + _deliveryCharge;
           var finalAmount = widget.order.amount +
               _gstAmount +
               (hasActiveSubscriptionForCurrentService ? 0.0 : _deliveryCharge);
@@ -1149,6 +1150,7 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
             serviceId: widget.order.serviceId,
             date: widget.order.date,
             amount: finalAmount,
+            originalAmount: originalAmount,
             status: 'Pending',
             userName: userDetails['name'],
             userMobile: userDetails['phone'],
@@ -1267,6 +1269,7 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
           final subscriptionProvider =
               Provider.of<SubscriptionProvider>(context, listen: false);
           // finalAmount is zero because unique code applied
+          final double originalAmount = widget.order.amount + _gstAmount + _deliveryCharge;
           var finalAmount = 0.0;
 
           final userDetails = await _fetchUserDetails();
@@ -1276,6 +1279,7 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
             serviceName: widget.order.serviceName,
             date: widget.order.date,
             amount: finalAmount,
+            originalAmount: originalAmount,
             status: 'Pending',
             userName: userDetails['name'],
             userMobile: userDetails['phone'],
@@ -1482,6 +1486,7 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
             final hasActiveSubscriptionForCurrentService =
                 subscriptionProvider.hasActiveSubscriptionForService(widget.order.serviceId ?? widget.order.serviceName);
             // Ensure GST + delivery charge are included in final amount
+            final double originalAmount = widget.order.amount + _gstAmount + _deliveryCharge;
             var finalAmount = widget.order.amount +
                 _gstAmount +
                 (hasActiveSubscriptionForCurrentService ? 0.0 : _deliveryCharge);
@@ -1496,6 +1501,7 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
               serviceId: widget.order.serviceId,
               date: widget.order.date,
               amount: finalAmount,
+              originalAmount: originalAmount,
               status: 'Pending',
               userName: userDetails['name'],
               userMobile: userDetails['phone'],

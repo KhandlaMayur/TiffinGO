@@ -150,9 +150,9 @@ class _SellerOrdersScreenState extends State<SellerOrdersScreen>
                         o['appliedUniqueCode'].toString().isNotEmpty))
                 .length;
             final nonSubscribedOrders = totalOrders - subscribedOrders;
-            double totalRevenue = 0;
+            double orderRevenue = 0;
             for (final o in orders) {
-              totalRevenue += (o['amount'] as num?)?.toDouble() ?? 0;
+              orderRevenue += (o['amount'] as num?)?.toDouble() ?? 0;
             }
             final codOrders = orders
                 .where((o) =>
@@ -181,33 +181,63 @@ class _SellerOrdersScreenState extends State<SellerOrdersScreen>
               filteredOrders = orders.where((o) => !(o['paymentMethod'] ?? '').toString().toLowerCase().contains('cash')).toList();
             }
 
-            return ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                _buildSummaryCards(
-                  totalOrders: totalOrders,
-                  subscribedOrders: subscribedOrders,
-                  nonSubscribedOrders: nonSubscribedOrders,
-                  totalRevenue: totalRevenue,
-                  codOrders: codOrders,
-                  onlineOrders: onlineOrders,
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  '$_ordersFilter (${filteredOrders.length})',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: navy,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                if (filteredOrders.isEmpty)
-                  _emptyState('No orders match this filter', Icons.receipt_long)
-                else
-                  ...filteredOrders.map((o) => _buildOrderCard(o)),
-              ],
+            return StreamBuilder<QuerySnapshot>(
+              stream: _subscriptionsStream(),
+              builder: (ctx, subSnapById) {
+                return StreamBuilder<QuerySnapshot>(
+                  stream: _subscriptionsByNameStream(),
+                  builder: (ctx, subSnapByName) {
+                    
+                    double subRevenue = 0;
+                    final Map<String, dynamic> mergedSubs = {};
+                    if (subSnapById.hasData) {
+                      for (final doc in subSnapById.data!.docs) {
+                        mergedSubs[doc.id] = (doc.data() as Map<String, dynamic>)['amount'] ?? 0;
+                      }
+                    }
+                    if (subSnapByName.hasData) {
+                      for (final doc in subSnapByName.data!.docs) {
+                        mergedSubs[doc.id] = (doc.data() as Map<String, dynamic>)['amount'] ?? 0;
+                      }
+                    }
+                    for (final val in mergedSubs.values) {
+                      subRevenue += (val as num?)?.toDouble() ?? 0;
+                    }
+
+                    final double grandTotalRevenue = orderRevenue + subRevenue;
+
+                    return ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        _buildSummaryCards(
+                          totalOrders: totalOrders,
+                          subscribedOrders: subscribedOrders,
+                          nonSubscribedOrders: nonSubscribedOrders,
+                          totalRevenue: grandTotalRevenue, // Global Revenue across orders & subs
+                          codOrders: codOrders,
+                          onlineOrders: onlineOrders,
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          '$_ordersFilter (${filteredOrders.length})',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: navy,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        if (filteredOrders.isEmpty)
+                          _emptyState('No orders match this filter', Icons.receipt_long)
+                        else
+                          ...filteredOrders.map((o) => _buildOrderCard(o)),
+                      ],
+                    );
+                  }
+                );
+              }
             );
+
           },
         );
       },
@@ -538,6 +568,8 @@ class _SellerOrdersScreenState extends State<SellerOrdersScreen>
     final mealPlan = order['mealPlan'] ?? '';
     final subscription = order['subscription'] ?? '';
     final amount = (order['amount'] as num?)?.toDouble() ?? 0;
+    final originalAmount = (order['originalAmount'] as num?)?.toDouble();
+    final displayAmount = (amount == 0.0 && originalAmount != null) ? originalAmount : amount;
     final deliveryCharge = (order['deliveryCharge'] as num?)?.toDouble() ?? 0;
     final distanceKm = (order['distanceInKm'] as num?)?.toDouble() ?? 0;
     final date = order['date'] ?? '';
@@ -607,7 +639,7 @@ class _SellerOrdersScreenState extends State<SellerOrdersScreen>
             ),
           ),
           title: Text(
-            '₹${amount.toStringAsFixed(2)}',
+            (amount == 0.0 && originalAmount != null) ? '₹${displayAmount.toStringAsFixed(2)} (Prepaid)' : '₹${displayAmount.toStringAsFixed(2)}',
             style: const TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 16,

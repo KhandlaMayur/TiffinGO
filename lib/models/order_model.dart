@@ -4,6 +4,7 @@ class OrderModel {
   final String? serviceId; // ID of tiffine service (e.g., 'kathiyavadi')
   final String date;
   final double amount;
+  final double? originalAmount;
   final String status;
   final String paymentMethod;
   final String mealType;
@@ -27,6 +28,7 @@ class OrderModel {
     this.serviceId,
     required this.date,
     required this.amount,
+    this.originalAmount,
     required this.status,
     required this.paymentMethod,
     required this.mealType,
@@ -51,6 +53,7 @@ class OrderModel {
       'serviceId': serviceId,
       'date': date,
       'amount': amount,
+      'originalAmount': originalAmount,
       'status': status,
       'paymentMethod': paymentMethod,
       'mealType': mealType,
@@ -75,7 +78,8 @@ class OrderModel {
       serviceName: json['serviceName'],
       serviceId: json['serviceId'],
       date: json['date'],
-      amount: json['amount'],
+      amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
+      originalAmount: (json['originalAmount'] as num?)?.toDouble(),
       status: json['status'],
       paymentMethod: json['paymentMethod'] ?? 'Cash on Delivery',
       mealType: json['mealType'] ?? 'veg',
