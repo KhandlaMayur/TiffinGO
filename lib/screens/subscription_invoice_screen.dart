@@ -1,109 +1,244 @@
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:screenshot/screenshot.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../models/subscription_model.dart';
 
-class SubscriptionInvoiceScreen extends StatelessWidget {
+class SubscriptionInvoiceScreen extends StatefulWidget {
   final SubscriptionModel subscription;
 
   const SubscriptionInvoiceScreen({super.key, required this.subscription});
 
-  String _buildInvoiceText() {
-    final buffer = StringBuffer();
-    buffer.writeln('Tiffin Service - Subscription Invoice');
-    buffer.writeln('--------------------------------------');
-    buffer.writeln('Invoice ID: ${subscription.id}');
-    buffer.writeln('User ID: ${subscription.userId}');
-    buffer.writeln('Service: ${subscription.tiffineService ?? 'N/A'}');
-    buffer.writeln('Category: ${subscription.category}');
-    buffer.writeln('Meal Type: ${subscription.mealType ?? 'N/A'}');
-    buffer.writeln('Subscription Type: ${subscription.subscriptionType}');
-    buffer.writeln(
-        'Start Date: ${subscription.startDate.day}/${subscription.startDate.month}/${subscription.startDate.year}');
-    buffer.writeln(
-        'End Date: ${subscription.endDate.day}/${subscription.endDate.month}/${subscription.endDate.year}');
-    if (subscription.pauseStart != null && subscription.pauseEnd != null) {
-      buffer.writeln(
-          'Pause Start: ${subscription.pauseStart!.day}/${subscription.pauseStart!.month}/${subscription.pauseStart!.year}');
-      buffer.writeln(
-          'Pause End: ${subscription.pauseEnd!.day}/${subscription.pauseEnd!.month}/${subscription.pauseEnd!.year}');
+  @override
+  State<SubscriptionInvoiceScreen> createState() => _SubscriptionInvoiceScreenState();
+}
+
+class _SubscriptionInvoiceScreenState extends State<SubscriptionInvoiceScreen> {
+  final ScreenshotController _screenshotController = ScreenshotController();
+
+  Future<void> _captureAndShare(bool isDownload) async {
+    try {
+      final Uint8List? imageBytes = await _screenshotController.capture(
+        delay: const Duration(milliseconds: 10),
+      );
+
+      if (imageBytes != null) {
+        final directory = await getTemporaryDirectory();
+        final imagePath = await File('${directory.path}/invoice_${widget.subscription.id}.png').create();
+        await imagePath.writeAsBytes(imageBytes);
+
+        if (isDownload && Platform.isAndroid) {
+          // Ideally use Image Gallery Saver, but Share covers saving to Google Drive/Photos
+          await Share.shareXFiles(
+            [XFile(imagePath.path)], 
+            text: 'Save your TiffinGO Invoice',
+            subject: 'Invoice ${widget.subscription.id}'
+          );
+        } else {
+          await Share.shareXFiles(
+            [XFile(imagePath.path)],
+            text: 'Here is my TiffinGO Subscription Invoice!',
+            subject: 'Invoice ${widget.subscription.id}',
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
     }
-    buffer.writeln('Quantity/day: ${subscription.quantityPerDay}');
-    buffer.writeln('Meal Periods: ${subscription.mealPeriods.join(', ')}');
-    buffer.writeln('Extra Orders: ${subscription.extraOrders}');
-    buffer.writeln('Remaining Orders: ${subscription.remainingOrders}');
-    buffer.writeln('Amount: ₹${subscription.amount.toStringAsFixed(2)}');
-    buffer.writeln(
-        'Pending Amount: ₹${subscription.pendingAmount.toStringAsFixed(2)}');
-    buffer.writeln('Payment Method: ${subscription.paymentMethod}');
-    buffer.writeln(
-        'Payment Completed: ${subscription.paymentCompleted ? 'Yes' : 'No'}');
-    buffer.writeln('Unique Code: ${subscription.uniqueCode ?? 'N/A'}');
-    buffer.writeln('--------------------------------------');
-    buffer.writeln('Thank you for your subscription!');
-    return buffer.toString();
+  }
+
+  Widget _buildInvoiceUI() {
+    final sub = widget.subscription;
+    return Container(
+      color: Colors.grey[100],
+      padding: const EdgeInsets.all(20),
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.2),
+              blurRadius: 15,
+              offset: const Offset(0, 5),
+            )
+          ],
+          border: Border.all(color: const Color(0xFF1E3A8A).withOpacity(0.3), width: 2),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Column(
+                children: [
+                  const Icon(Icons.receipt_long, size: 48, color: Color(0xFF1E3A8A)),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'TiffinGO Invoice',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1E3A8A),
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'ID: ${sub.id}',
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 30, thickness: 1.5),
+            _buildInvoiceRow('Service Provider', sub.tiffineService ?? 'N/A', isBold: true),
+            _buildInvoiceRow('Plan Type', sub.subscriptionType.toUpperCase()),
+            _buildInvoiceRow('Category', sub.category),
+            _buildInvoiceRow('Meal Type', sub.mealType?.toUpperCase() ?? 'N/A'),
+            const SizedBox(height: 10),
+            _buildInvoiceRow('Start Date', '${sub.startDate.day}/${sub.startDate.month}/${sub.startDate.year}'),
+            _buildInvoiceRow('End Date', '${sub.endDate.day}/${sub.endDate.month}/${sub.endDate.year}'),
+            const Divider(height: 25),
+            _buildInvoiceRow('Tiffins per Day', '${sub.quantityPerDay}'),
+            if (sub.extraOrders > 0)
+              _buildInvoiceRow('Extra Orders', '${sub.extraOrders} selected'),
+            _buildInvoiceRow('Total Allowed Uses', '${sub.remainingOrders} remaining'),
+            _buildInvoiceRow('Meal Periods', sub.mealPeriods.join(', ')),
+            const Divider(height: 25),
+            _buildInvoiceRow('Payment Method', sub.paymentMethod),
+            _buildInvoiceRow('Status', sub.paymentCompleted ? 'Paid' : 'Pending', isPaid: true),
+            const SizedBox(height: 15),
+            if (sub.uniqueCode != null)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E3A8A).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFF1E3A8A), style: BorderStyle.solid),
+                ),
+                child: Column(
+                  children: [
+                    const Text('YOUR UNIQUE CODE', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A))),
+                    const SizedBox(height: 4),
+                    Text(
+                      sub.uniqueCode!,
+                      style: const TextStyle(fontSize: 24, letterSpacing: 4, fontWeight: FontWeight.w900, color: Color(0xFF1E3A8A)),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Total Amount',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  '₹${sub.amount.toStringAsFixed(2)}',
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.green),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInvoiceRow(String label, String value, {bool isBold = false, bool isPaid = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: TextStyle(color: Colors.grey[700], fontSize: 14)),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+                color: isPaid ? (value == 'Paid' ? Colors.green : Colors.red) : Colors.black87,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final invoice = _buildInvoiceText();
-
     return Scaffold(
+      backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        title: const Text('Subscription Invoice'),
+        title: const Text('Invoice Details'),
         backgroundColor: const Color(0xFF1E3A8A),
+        foregroundColor: Colors.white,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
+      body: SafeArea(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
               child: SingleChildScrollView(
-                child: SelectableText(
-                  invoice,
-                  style: const TextStyle(fontSize: 16, height: 1.4),
+                child: Screenshot(
+                  controller: _screenshotController,
+                  child: _buildInvoiceUI(),
                 ),
               ),
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () async {
-                      await Clipboard.setData(ClipboardData(text: invoice));
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('Invoice copied to clipboard')),
-                        );
-                      }
-                    },
-                    icon: const Icon(Icons.copy),
-                    label: const Text('Copy Invoice'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      // For now just pop with a message; advanced sharing/PDF can be added later
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text(
-                                  'Sharing not available (add share package)')),
-                        );
-                      }
-                    },
-                    icon: const Icon(Icons.share),
-                    label: const Text('Share'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1E3A8A),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, -4))],
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _captureAndShare(true),
+                      icon: const Icon(Icons.download),
+                      label: const Text('Download'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        side: const BorderSide(color: Color(0xFF1E3A8A), width: 2),
+                        foregroundColor: const Color(0xFF1E3A8A),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => _captureAndShare(false),
+                      icon: const Icon(Icons.share),
+                      label: const Text('Share Invoice'),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        backgroundColor: const Color(0xFF1E3A8A),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),

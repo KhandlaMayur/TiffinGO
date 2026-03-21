@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/location_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/subscription_provider.dart';
 
 import '../widgets/account_drawer.dart';
 import '../widgets/cities_scroll_widget.dart';
@@ -29,6 +30,16 @@ class _LandingScreenState extends State<LandingScreen>
     super.initState();
     _searchController.addListener(_onSearchChanged);
     _scrollController.addListener(_onMainScroll);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final contact =
+          authProvider.currentUser?.contact ?? authProvider.currentUser?.email;
+      if (contact != null) {
+        Provider.of<SubscriptionProvider>(context, listen: false)
+            .syncWithFirestore(contact);
+      }
+    });
   }
 
   void _onMainScroll() {
@@ -64,12 +75,13 @@ class _LandingScreenState extends State<LandingScreen>
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
-        
+
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
         await authProvider.logout();
 
         if (!mounted) return;
-        Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+        Navigator.of(context)
+            .pushNamedAndRemoveUntil('/login', (route) => false);
       },
       child: Scaffold(
         backgroundColor: Colors.white,
@@ -116,7 +128,8 @@ class _LandingScreenState extends State<LandingScreen>
                 controller: _searchController,
                 decoration: InputDecoration(
                   hintText: 'Search Tiffine Services...',
-                  prefixIcon: const Icon(Icons.search, color: Color(0xFF1E3A8A)),
+                  prefixIcon:
+                      const Icon(Icons.search, color: Color(0xFF1E3A8A)),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: const BorderSide(color: Color(0xFF1E3A8A)),

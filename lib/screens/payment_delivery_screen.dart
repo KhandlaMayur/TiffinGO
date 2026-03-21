@@ -48,15 +48,6 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
   double? _serviceLatitude;
   double? _serviceLongitude;
 
-  /// Fallback coordinates in case Firestore doesn't have the service details.
-  /// This ensures delivery charge can still be calculated even when Firestore is missing.
-  static const Map<String, LatLng> _serviceFallbackLocations = {
-    'kathiyavadi': LatLng(22.2953, 70.8000), // Trikon Baug, Rajkot
-    'nani': LatLng(22.2964, 70.7903), // Yagnik Road, Rajkot
-    'rajwadi': LatLng(22.3248, 70.7720), // Madhapar, Rajkot
-    'desi_rotalo': LatLng(22.34, 70.80), // Greenland Chowk, Rajkot
-  };
-
   double _gstAmount = 0.0;
   double _distanceInKm = 0.0;
 
@@ -172,39 +163,10 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
       } else {
         debugPrint(
             '❌ No documents found for service name: ${widget.order.serviceName}');
-        debugPrint('⚠️ Falling back to built-in coordinates for this service');
-
-        // Use a static fallback location if Firestore is missing the document. This ensures
-        // delivery fee is still calculated instead of staying zero.
-        final key = widget.order.serviceId?.toLowerCase() ??
-            widget.order.serviceName.toLowerCase().replaceAll(' ', '_');
-        final fallback = _serviceFallbackLocations[key];
-        if (fallback != null) {
-          setState(() {
-            _serviceLatitude = fallback.latitude;
-            _serviceLongitude = fallback.longitude;
-          });
-          if (_currentPosition != null) {
-            _recalculateDeliveryCharge();
-          }
-        }
+        debugPrint('⚠️ Missing service location');
       }
     } catch (e) {
       debugPrint('❌ Error fetching service location: $e');
-
-      // If Firestore fails, fall back to built-in location info.
-      final key = widget.order.serviceId?.toLowerCase() ??
-          widget.order.serviceName.toLowerCase().replaceAll(' ', '_');
-      final fallback = _serviceFallbackLocations[key];
-      if (fallback != null) {
-        setState(() {
-          _serviceLatitude = fallback.latitude;
-          _serviceLongitude = fallback.longitude;
-        });
-        if (_currentPosition != null) {
-          _recalculateDeliveryCharge();
-        }
-      }
     }
   }
 

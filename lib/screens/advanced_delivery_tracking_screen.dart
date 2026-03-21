@@ -29,44 +29,23 @@ class AdvancedDeliveryTrackingScreen extends StatefulWidget {
 class _AdvancedDeliveryTrackingScreenState
     extends State<AdvancedDeliveryTrackingScreen> {
   // Kitchen coordinates for each service
-  // Static kitchen coordinates for each service — used as fallback
-  static const LatLng _kathiyavadi = LatLng(22.2953, 70.8000);
-  static const LatLng _nani = LatLng(22.2964, 70.7903);
-  static const LatLng _rajwadi = LatLng(22.3248, 70.7720);
-  static const LatLng _desi = LatLng(22.34, 70.80);
+  // Default fallback kitchen location if seller location is missing
+  static const LatLng _defaultKitchen = LatLng(22.3045, 70.8032);
 
   // Seller location from OrderModel (if available)
   LatLng? _sellerLocationFromOrder;
 
-  /// Chooses the correct kitchen based on the order's sellerLocation, serviceId or name.
+  /// Chooses the correct kitchen based on the order's sellerLocation.
   ///
-  /// Prefers `sellerLocation` from order if available, otherwise
-  /// `serviceId` is preferred since it is likely to be a stable identifier;
-  /// otherwise the code falls back to checking substrings in the human-readable
-  /// `serviceName`.  Defaults to Kathiyavadi if nothing matches.
+  /// Prefers `sellerLocation` from order if available.
+  /// Defaults to a static fallback location if missing.
   LatLng get _selectedKitchen {
     // Priority 1: Use seller location from order if available
     if (_sellerLocationFromOrder != null) {
       return _sellerLocationFromOrder!;
     }
 
-    // Priority 2: Use service ID
-    final id = widget.order.serviceId?.toLowerCase();
-    if (id != null) {
-      if (id.contains('kathiyavadi')) return _kathiyavadi;
-      if (id.contains('nani')) return _nani;
-      if (id.contains('rajwadi')) return _rajwadi;
-      if (id.contains('desi')) return _desi;
-    }
-
-    // Priority 3: Use service name
-    final name = widget.order.serviceName.toLowerCase();
-    if (name.contains('kathiyavadi')) return _kathiyavadi;
-    if (name.contains('nani')) return _nani;
-    if (name.contains('rajwadi')) return _rajwadi;
-    if (name.contains('desi')) return _desi;
-
-    return _kathiyavadi; // default
+    return _defaultKitchen; // default fallback
   }
 
   int _currentStep = 0; // 0: Preparing, 1: Out for Delivery, 2: Delivered
@@ -117,6 +96,30 @@ class _AdvancedDeliveryTrackingScreenState
   /// Initialize location tracking and calculate route
   Future<void> _initLocationAndRoute() async {
     try {
+      // 1. Fetch seller location dynamically if missing from order
+      if (_sellerLocationFromOrder == null) {
+        debugPrint('Fetching seller kitchen location dynamically from tiffin_services...');
+        
+        final querySnap = await FirebaseFirestore.instance
+            .collection('tiffin_services')
+            .where('name', isEqualTo: widget.order.serviceName)
+            .limit(1)
+            .get();
+        
+        if (querySnap.docs.isNotEmpty) {
+          final data = querySnap.docs.first.data();
+          final lat = (data['latitude'] as num?)?.toDouble();
+          final lng = (data['longitude'] as num?)?.toDouble();
+          
+          if (lat != null && lng != null) {
+            _sellerLocationFromOrder = LatLng(lat, lng);
+            debugPrint('✅ Real kitchen location found: Lat=$lat, Lng=$lng');
+          } else {
+             debugPrint('⚠️ Service document exists but lacks coordinates.');
+          }
+        }
+      }
+
       // Check if location services are enabled
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
@@ -127,6 +130,7 @@ class _AdvancedDeliveryTrackingScreenState
             _userLat = 22.3045;
             _userLng = 70.8032;
           });
+          _calculateRoute();
         }
         return;
       }
@@ -143,6 +147,7 @@ class _AdvancedDeliveryTrackingScreenState
               _userLat = 22.3045;
               _userLng = 70.8032;
             });
+            _calculateRoute();
           }
           return;
         }
@@ -156,6 +161,7 @@ class _AdvancedDeliveryTrackingScreenState
             _userLat = 22.3045;
             _userLng = 70.8032;
           });
+          _calculateRoute();
         }
         return;
       }
@@ -183,6 +189,7 @@ class _AdvancedDeliveryTrackingScreenState
           _userLat = 22.3045;
           _userLng = 70.8032;
         });
+        _calculateRoute();
       }
     }
   }

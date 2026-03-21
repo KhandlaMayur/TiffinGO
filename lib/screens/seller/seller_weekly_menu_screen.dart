@@ -41,6 +41,9 @@ class _SellerWeeklyMenuScreenState extends State<SellerWeeklyMenuScreen>
   // Store prices per plan (price remains global per plan)
   final Map<String, TextEditingController> _priceControllers = {};
 
+  // Store extra foods per plan (format: Name:Price, Name:Price)
+  final Map<String, TextEditingController> _extraFoodControllers = {};
+
   List<String> _planIds = [];
   bool _isLoadingPlanIds = true;
 
@@ -97,8 +100,12 @@ class _SellerWeeklyMenuScreenState extends State<SellerWeeklyMenuScreen>
     for (final controller in _priceControllers.values) {
       controller.dispose();
     }
+    for (final controller in _extraFoodControllers.values) {
+      controller.dispose();
+    }
     _controllers.clear();
     _priceControllers.clear();
+    _extraFoodControllers.clear();
 
     for (final day in _days) {
       _controllers[day] = {};
@@ -113,6 +120,7 @@ class _SellerWeeklyMenuScreenState extends State<SellerWeeklyMenuScreen>
     for (final plan in _planIds) {
       _priceControllers['veg_${plan}_price'] = TextEditingController();
       _priceControllers['jain_${plan}_price'] = TextEditingController();
+      _extraFoodControllers[plan] = TextEditingController();
     }
   }
 
@@ -143,6 +151,18 @@ class _SellerWeeklyMenuScreenState extends State<SellerWeeklyMenuScreen>
       }
       if (jain != null) {
         _priceControllers['jain_${plan}_price']?.text = jain.toString();
+      }
+    }
+
+    final extraFoods = data['extra_foods'] as Map<String, dynamic>?;
+    if (extraFoods != null) {
+      for (final plan in _planIds) {
+        final planExtras = extraFoods[plan] as List<dynamic>?;
+        if (planExtras != null) {
+          final extraStrs =
+              planExtras.map((e) => "${e['name']}:${e['price']}").join(', ');
+          _extraFoodControllers[plan]?.text = extraStrs;
+        }
       }
     }
 
@@ -189,6 +209,9 @@ class _SellerWeeklyMenuScreenState extends State<SellerWeeklyMenuScreen>
       }
     }
     for (final controller in _priceControllers.values) {
+      controller.dispose();
+    }
+    for (final controller in _extraFoodControllers.values) {
       controller.dispose();
     }
     super.dispose();
@@ -262,11 +285,34 @@ class _SellerWeeklyMenuScreenState extends State<SellerWeeklyMenuScreen>
         widget.serviceId: serviceData,
       }, SetOptions(merge: true));
 
+      final Map<String, dynamic> extraFoodData = {};
+      for (final plan in _planIds) {
+        final extrasText = _extraFoodControllers[plan]?.text ?? '';
+        final extrasList = <Map<String, dynamic>>[];
+        if (extrasText.isNotEmpty) {
+          for (final item in extrasText.split(',')) {
+            final str = item.trim();
+            if (str.isEmpty) continue;
+            // Match anything then a separator (or space) then digits at the end
+            final match = RegExp(r'^(.*?)\s*[-:]?\s*(\d+(?:\.\d+)?)$').firstMatch(str);
+            if (match != null) {
+              final name = match.group(1)?.trim();
+              final price = double.tryParse(match.group(2) ?? '');
+              if (name != null && name.isNotEmpty && price != null) {
+                extrasList.add({'name': name, 'price': price});
+              }
+            }
+          }
+        }
+        extraFoodData[plan] = extrasList;
+      }
+
       await FirebaseFirestore.instance
           .collection('tiffin_services')
           .doc(widget.serviceId)
           .set({
         'prices': priceData,
+        'extra_foods': extraFoodData,
         'menus':
             serviceData, // Store the weekly menu structurally in the seller doc
         'updatedAt': FieldValue.serverTimestamp(),
@@ -438,6 +484,15 @@ class _SellerWeeklyMenuScreenState extends State<SellerWeeklyMenuScreen>
                       controller: _controllers[day]![plan]?['jain'],
                       decoration: const InputDecoration(
                         labelText: 'Jain Items (comma separated)',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _extraFoodControllers[plan],
+                      decoration: const InputDecoration(
+                        labelText: 'Extra Food (e.g., Roti:10, Sweet:50)',
                         border: OutlineInputBorder(),
                       ),
                       maxLines: 2,

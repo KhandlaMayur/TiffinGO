@@ -20,44 +20,7 @@ class TiffineServicesList extends StatelessWidget {
     this.scrollController,
   });
 
-  final List<Map<String, dynamic>> _services = const [
-    {
-      'name': 'Kathiyavadi Tiffine Service',
-      'description': 'Authentic Kathiyawadi cuisine with traditional flavors',
-      'rating': 4.5,
-      'deliveryTime': '30-45 mins',
-      'price': '₹150-₹300',
-      'image': 'assets/images/kathiyavadi.jpg',
-      'id': 'kathiyavadi',
-    },
-    {
-      'name': 'Desi Rotalo Tiffine Service',
-      'description': 'Fresh rotis and traditional Gujarati dishes',
-      'rating': 4.3,
-      'deliveryTime': '25-40 mins',
-      'price': '₹120-₹250',
-      'image': 'assets/images/desi_rotalo.jpg',
-      'id': 'desi_rotalo',
-    },
-    {
-      'name': 'Nani Tiffine Service',
-      'description': 'Home-style cooking with grandmother\'s recipes',
-      'rating': 4.7,
-      'deliveryTime': '35-50 mins',
-      'price': '₹180-₹350',
-      'image': 'assets/images/nani.jpg',
-      'id': 'nani',
-    },
-    {
-      'name': 'Rajwadi Tiffine Service',
-      'description': 'Royal Rajasthani cuisine with rich flavors',
-      'rating': 4.4,
-      'deliveryTime': '40-55 mins',
-      'price': '₹200-₹400',
-      'image': 'assets/images/rajwadi.jpg',
-      'id': 'rajwadi',
-    },
-  ];
+  final List<Map<String, dynamic>> _services = const [];
 
   List<Map<String, dynamic>> _filterServices(
       List<Map<String, dynamic>> services) {
@@ -83,17 +46,67 @@ class TiffineServicesList extends StatelessWidget {
         if (snapshot.hasData) {
           services = snapshot.data!.docs.where((doc) {
             final data = doc.data() as Map<String, dynamic>;
-            return data['isClosed'] != true;
+            final name = data['serviceName'] ?? data['name'] ?? 'Tiffin Service';
+            // Exclude closed services and generic 'Tiffin Service' placeholder docs
+            return data['isClosed'] != true && name.toString().toLowerCase() != 'tiffin service';
           }).map((doc) {
             final data = doc.data() as Map<String, dynamic>;
+            
+            // Dynamic Price Calculation
+            String priceDisplay = '₹150-₹300';
+            if (data['prices'] is Map<String, dynamic>) {
+              final pricesMap = data['prices'] as Map<String, dynamic>;
+              double minPrice = double.infinity;
+              double maxPrice = 0.0;
+              bool foundPrices = false;
+              
+              pricesMap.values.forEach((planPrices) {
+                if (planPrices is Map<String, dynamic>) {
+                  planPrices.values.forEach((price) {
+                    if (price is num) {
+                      final p = price.toDouble();
+                      if (p > 0) {
+                        if (p < minPrice) minPrice = p;
+                        if (p > maxPrice) maxPrice = p;
+                        foundPrices = true;
+                      }
+                    }
+                  });
+                }
+              });
+              
+              if (foundPrices) {
+                if (minPrice == maxPrice) {
+                  priceDisplay = '₹${minPrice.toStringAsFixed(0)}';
+                } else {
+                  priceDisplay = '₹${minPrice.toStringAsFixed(0)}-₹${maxPrice.toStringAsFixed(0)}';
+                }
+              } else {
+                priceDisplay = data['price'] ?? data['priceRange'] ?? '₹150-₹300';
+              }
+            } else {
+              priceDisplay = data['price'] ?? data['priceRange'] ?? '₹150-₹300';
+            }
+
+            // Dynamic Rating Generation
+            double currentRating;
+            if (data['rating'] != null && data['rating'] is num) {
+              currentRating = (data['rating'] as num).toDouble();
+            } else {
+              // Generate pseudo-random rating between 4.0 and 4.7 based on doc.id hash
+              final hash = doc.id.hashCode.abs();
+              final fractional = (hash % 8) / 10; // 0.0 to 0.7
+              currentRating = 4.0 + fractional;
+            }
+
             return {
               'id': doc.id,
               'name': data['serviceName'] ?? data['name'] ?? 'Tiffin Service',
               'description': data['address'] ?? data['description'] ?? '',
-              'rating': data['rating'] ?? 4.5,
+              'rating': currentRating,
               'deliveryTime':
                   data['availableTime'] ?? data['deliveryTime'] ?? '',
-              'price': data['price'] ?? data['priceRange'] ?? '₹150-₹300',
+              'price': priceDisplay,
               'image': data['image'] ?? 'assets/images/kathiyavadi.jpg',
               ...data,
             };
@@ -294,20 +307,20 @@ class TiffineServicesList extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      Row(
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
                           _buildInfoChip(
                             Icons.star,
                             '${service['rating']}',
                             Colors.amber,
                           ),
-                          const SizedBox(width: 8),
                           _buildInfoChip(
                             Icons.timer,
                             service['deliveryTime'],
                             const Color(0xFF1E3A8A),
                           ),
-                          const SizedBox(width: 8),
                           _buildInfoChip(
                             Icons.currency_rupee,
                             service['price'],
@@ -392,7 +405,7 @@ class TiffineServicesList extends StatelessWidget {
 
   Widget _buildInfoChip(IconData icon, String text, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
@@ -403,12 +416,16 @@ class TiffineServicesList extends StatelessWidget {
         children: [
           Icon(icon, size: 14, color: color),
           const SizedBox(width: 4),
-          Text(
-            text,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: color,
+          Flexible(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
             ),
           ),
         ],
@@ -438,6 +455,7 @@ class _TiffinMenuScreenState extends State<TiffinMenuScreen> {
   late List<MealPlan> _mealPlans;
 
   Map<String, Map<String, double>>? _servicePriceOverrides;
+  Map<String, List<ExtraFoodItem>>? _serviceExtraFoodsOverrides;
 
   bool _isLoadingServiceConfig = true;
   StreamSubscription<DocumentSnapshot>? _serviceSub;
@@ -526,9 +544,29 @@ class _TiffinMenuScreenState extends State<TiffinMenuScreen> {
               };
             }
           });
-
-          _applyPriceOverrides();
         }
+
+        final extraFoodsMap = data['extra_foods'] as Map<String, dynamic>?;
+        if (extraFoodsMap != null) {
+          _serviceExtraFoodsOverrides = {};
+          extraFoodsMap.forEach((planId, planExtrasList) {
+            if (planExtrasList is List) {
+              final items = planExtrasList.map((e) {
+                return ExtraFoodItem(
+                  id: e['name'],
+                  name: e['name'],
+                  description: '',
+                  price: (e['price'] as num?)?.toDouble() ?? 0.0,
+                  category: planId,
+                  image: '',
+                );
+              }).toList();
+              _serviceExtraFoodsOverrides![planId] = items;
+            }
+          });
+        }
+
+        _applyPriceOverrides();
 
         if (mounted) {
           setState(() {
@@ -554,23 +592,26 @@ class _TiffinMenuScreenState extends State<TiffinMenuScreen> {
   }
 
   void _applyPriceOverrides() {
-    if (_servicePriceOverrides == null) return;
+    if (_servicePriceOverrides == null && _serviceExtraFoodsOverrides == null)
+      return;
 
     _mealPlans = _mealPlans.map((plan) {
-      final overrides = _servicePriceOverrides![plan.id];
-      if (overrides == null) return plan;
+      final overrides = _servicePriceOverrides?[plan.id];
+      final extraFoods = _serviceExtraFoodsOverrides?[plan.id];
 
       return MealPlan(
         id: plan.id,
         name: plan.name,
         description: plan.description,
-        prices: {
-          'veg': overrides['veg'] ?? plan.prices['veg'] ?? 0.0,
-          'jain': overrides['jain'] ?? plan.prices['jain'] ?? 0.0,
-        },
+        prices: overrides != null
+            ? {
+                'veg': overrides['veg'] ?? plan.prices['veg'] ?? 0.0,
+                'jain': overrides['jain'] ?? plan.prices['jain'] ?? 0.0,
+              }
+            : plan.prices,
         specialOffer: plan.specialOffer,
         contents: plan.contents,
-        extraFoodItems: plan.extraFoodItems,
+        extraFoodItems: extraFoods ?? plan.extraFoodItems,
       );
     }).toList();
 
@@ -1319,11 +1360,15 @@ class _TiffinMenuScreenState extends State<TiffinMenuScreen> {
 
     // Build extra food list with quantities
     final List<String> extraFoodList = [];
+    double totalExtraFoodPrice = 0.0;
     for (var entry in _selectedExtraFood.entries) {
       if (entry.value > 0) {
         final item =
             mealPlan.extraFoodItems.firstWhere((item) => item.id == entry.key);
-        extraFoodList.add('${entry.value}x ${item.name}');
+        final itemTotal = item.price * entry.value;
+        totalExtraFoodPrice += itemTotal;
+        extraFoodList.add(
+            '${entry.value}x ${item.name} (₹${itemTotal.toStringAsFixed(2)})');
       }
     }
 

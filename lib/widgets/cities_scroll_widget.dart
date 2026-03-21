@@ -20,13 +20,13 @@ class _CitiesScrollWidgetState extends State<CitiesScrollWidget> {
       'name': 'Surendranagar',
       'description': 'Authentic Gujarati cuisine with traditional flavors',
       'image': 'assets/images/surendranagar.jpg',
-      'services': 'Kathiyavadi, Desi Rotalo, Nani Tiffine',
+      'services': 'Multiple Tiffine Services available',
     },
     {
       'name': 'Rajkot',
       'description': 'Modern city with diverse food options and quick delivery',
       'image': 'assets/images/rajkot.jpg',
-      'services': 'Rajwadi, Kathiyavadi, Desi Rotalo',
+      'services': 'Wide variety of Tiffine Services',
     },
     {
       'name': 'Ahmedabad',

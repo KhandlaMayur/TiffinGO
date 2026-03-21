@@ -43,6 +43,31 @@ class SubscriptionProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> syncWithFirestore(String userId) async {
+    try {
+      final firestore = FirebaseFirestore.instance;
+      final querySnapshot = await firestore
+          .collection('user_subscription')
+          .where('userId', isEqualTo: userId)
+          .get();
+
+      if (querySnapshot.docs.isNotEmpty) {
+        _subscriptionHistory.clear();
+        for (var doc in querySnapshot.docs) {
+          try {
+            _subscriptionHistory.add(SubscriptionModel.fromJson(doc.data()));
+          } catch (e) {
+            // Error parsing this doc
+          }
+        }
+        await _saveSubscriptions();
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Error syncing subscriptions: $e');
+    }
+  }
+
   Future<void> addSubscription(SubscriptionModel subscription) async {
     _subscriptionHistory.add(subscription);
     await _saveSubscriptions();

@@ -62,12 +62,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     {'id': 'monthly', 'name': 'Monthly', 'days': 30, 'discount': 20},
   ];
 
-  final List<Map<String, dynamic>> _tiffineServices = [
-    {'id': 'kathiyavadi', 'name': 'Kathiyavadi Tiffine Service'},
-    {'id': 'desi_rotalo', 'name': 'Desi Rotalo Tiffine Service'},
-    {'id': 'nani', 'name': 'Nani Tiffine Service'},
-    {'id': 'rajwadi', 'name': 'Rajwadi Tiffine Service'},
-  ];
+  final List<Map<String, dynamic>> _tiffineServices = [];
 
   List<Map<String, dynamic>> _categories = [
     {'id': 'normal', 'name': 'Normal Tiffine', 'basePrice': 100},
@@ -173,12 +168,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         
         // Final fallback if everything fails
         if (sellerLat == null || sellerLng == null) {
-          final idLower = _selectedTiffineService!.toLowerCase();
-          if (idLower.contains('kathiyavadi')) { sellerLat = 22.2953; sellerLng = 70.8000; }
-          else if (idLower.contains('nani')) { sellerLat = 22.2964; sellerLng = 70.7903; }
-          else if (idLower.contains('rajwadi')) { sellerLat = 22.3248; sellerLng = 70.7720; }
-          else if (idLower.contains('desi')) { sellerLat = 22.34; sellerLng = 70.80; }
-          else throw 'Seller location missing';
+          throw 'Seller location missing';
         }
       }
       
@@ -298,6 +288,26 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     });
   }
 
+  double _getBasePriceForCategory(Map<String, dynamic> category) {
+    double basePrice = category['basePrice'].toDouble();
+    if (widget.service != null && widget.service!['prices'] != null) {
+      final pricesMap = widget.service!['prices'] as Map<String, dynamic>;
+      final mappedCategoryId = category['id'] == 'gym/diet' ? 'gym_diet' : category['id'];
+      final catPrices = pricesMap[mappedCategoryId] as Map<String, dynamic>?;
+      if (catPrices != null) {
+        final planPrice = catPrices[_selectedMealType ?? 'veg'];
+        if (planPrice != null) {
+          basePrice = (planPrice as num).toDouble();
+        }
+      }
+    } else {
+      if (_selectedMealType == 'jain') {
+        basePrice += 10; // Jain meals cost extra normally fallback
+      }
+    }
+    return basePrice;
+  }
+
   void _calculateTotal() {
     if (_selectedSubscriptionType == null ||
         _selectedCategory == null ||
@@ -313,22 +323,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       (cat) => cat['id'] == _selectedCategory,
     );
 
-    double basePrice = category['basePrice'].toDouble();
-    if (widget.service != null && widget.service!['prices'] != null) {
-      final pricesMap = widget.service!['prices'] as Map<String, dynamic>;
-      final mappedCategoryId = _selectedCategory == 'gym/diet' ? 'gym_diet' : _selectedCategory;
-      final catPrices = pricesMap[mappedCategoryId] as Map<String, dynamic>?;
-      if (catPrices != null) {
-        final planPrice = catPrices[_selectedMealType];
-        if (planPrice != null) {
-          basePrice = (planPrice as num).toDouble();
-        }
-      }
-    } else {
-      if (_selectedMealType == 'jain') {
-        basePrice += 10; // Jain meals cost extra normally
-      }
-    }
+    double basePrice = _getBasePriceForCategory(category);
 
     double price = basePrice * subscription['days'];
 
@@ -412,6 +407,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                         context, subscriptionProvider, active.id);
                   }
                 });
+
+                if (active.tiffineService != null && 
+                    _selectedTiffineService != null && 
+                    active.tiffineService != _selectedTiffineService) {
+                  return const SizedBox.shrink();
+                }
 
                 return Container(
                   margin: const EdgeInsets.only(bottom: 16),
@@ -897,7 +898,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                   ),
                 ),
                 Text(
-                  '₹${category['basePrice']}',
+                  '₹${_getBasePriceForCategory(category).toInt()}',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -1800,13 +1801,16 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 
   void _showSubscriptionExpiredDialog(BuildContext context,
       SubscriptionProvider provider, String subscriptionId) {
+    // Keep a reference to the active subscription before cancelling it
+    final active = provider.activeSubscription;
+
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         title: const Text('Subscription Completed'),
         content: const Text(
-          'All remaining orders have been used. Would you like to purchase a new subscription?',
+          'You have completed your subscription. Would you like to resubscribe to this same service with your previous selections, or choose a different tiffin service?',
         ),
         actions: [
           TextButton(
@@ -1816,9 +1820,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
             },
             child: const Text('Not Now'),
           ),
-          ElevatedButton(
+          TextButton(
             onPressed: () {
               Navigator.pop(ctx);
+              provider.cancelSubscription(subscriptionId);
               setState(() {
                 _selectedSubscriptionType = null;
                 _selectedCategory = null;
@@ -1829,11 +1834,52 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                 _totalPrice = 0.0;
               });
             },
+            child: const Text('Different Service'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              
+              if (active != null) {
+                // Cancel old one
+                provider.cancelSubscription(subscriptionId);
+                
+                // Restore parameters
+                setState(() {
+                  _selectedSubscriptionType = active.subscriptionType;
+                  _selectedCategory = active.category;
+                  _selectedMealType = active.mealType;
+                  _selectedTiffineService = active.tiffineService;
+                  _quantity = active.quantityPerDay;
+                  _extraOrders = 0; // usually fresh
+                  
+                  // Restore meal periods
+                  for (var key in _selectedMealPeriods.keys.toList()) {
+                    _selectedMealPeriods[key] = active.mealPeriods.contains(key);
+                  }
+                  
+                  _paymentCompleted = false;
+                  _calculateTotal();
+                  _calculateDeliveryCostAsync();
+                });
+                
+                // Direct to payment flow
+                Future.delayed(const Duration(milliseconds: 500), () {
+                  if (_totalPrice > 0) {
+                    if (_selectedPaymentMethod == 'Online Payment') {
+                      _showUpiPaymentConfirmation();
+                    } else {
+                      _confirmSubscription();
+                    }
+                  }
+                });
+              }
+            },
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF1E3A8A),
               foregroundColor: Colors.white,
             ),
-            child: const Text('Purchase New'),
+            child: const Text('Resubscribe Same'),
           ),
         ],
       ),
