@@ -48,13 +48,15 @@ class _AdvancedDeliveryTrackingScreenState
     return _defaultKitchen; // default fallback
   }
 
-  int _currentStep = 0; // 0: Preparing, 1: Out for Delivery, 2: Delivered
+  int _currentStep = 0; // 0: Pending, 1: Preparing, 2: Out for Delivery, 3: Delivered
 
   // Location tracking
   double? _userLat;
   double? _userLng;
   String _locationStatus = 'Fetching location...';
   StreamSubscription<Position>? _positionSub;
+  StreamSubscription<DocumentSnapshot>? _orderSub;
+  bool _hasDecrementedSubscription = false;
 
   // Route and map data
   TomTomRoute? _route;
@@ -83,11 +85,12 @@ class _AdvancedDeliveryTrackingScreenState
     }
 
     _initLocationAndRoute();
-    _simulateDeliveryProgress();
+    _listenToOrderStatus();
   }
 
   @override
   void dispose() {
+    _orderSub?.cancel();
     _positionSub?.cancel();
     _mapController.dispose();
     super.dispose();
@@ -313,35 +316,52 @@ class _AdvancedDeliveryTrackingScreenState
     }
   }
 
-  /// Simulate delivery progress
-  void _simulateDeliveryProgress() async {
-    await Future.delayed(const Duration(seconds: 3));
-    if (mounted) {
-      setState(() => _currentStep = 1);
-      Provider.of<OrderProvider>(context, listen: false)
-          .updateOrderStatus(widget.order.id, 'Out for Delivery');
+  /// Listen to order status dynamically from Firestore
+  void _listenToOrderStatus() {
+    _orderSub = FirebaseFirestore.instance
+        .collection('orders')
+        .doc(widget.order.id)
+        .snapshots()
+        .listen((doc) async {
+      if (!doc.exists || !mounted) return;
+      
+      final docData = doc.data();
+      if (docData != null && docData is Map<String, dynamic> && docData.containsKey('status')) {
+        final status = docData['status'] as String?;
+        if (status == null) return;
 
-      await Future.delayed(const Duration(seconds: 5));
-      if (mounted) {
-        setState(() => _currentStep = 2);
-        Provider.of<OrderProvider>(context, listen: false)
-            .updateOrderStatus(widget.order.id, 'Delivered');
+        setState(() {
+          if (status.toLowerCase() == 'pending') {
+            _currentStep = 0;
+          } else if (status.toLowerCase() == 'preparing') {
+            _currentStep = 1;
+          } else if (status.toLowerCase() == 'on the way') {
+            _currentStep = 2;
+          } else if (status.toLowerCase() == 'delivered') {
+            _currentStep = 3;
+          }
+        });
 
-        final subscriptionProvider =
-            Provider.of<SubscriptionProvider>(context, listen: false);
-        final currentUser = FirebaseAuth.instance.currentUser;
-        if (currentUser != null) {
-          await subscriptionProvider.decrementIfSubscriptionOrder(
-            currentUser.uid,
-            widget.order.mealType,
-            widget.order.mealPlan,
-            widget.order.serviceName,
-          );
+        // Trigger completion actions only once
+        if (_currentStep == 3 && !_hasDecrementedSubscription) {
+          _hasDecrementedSubscription = true;
+
+          final subscriptionProvider =
+              Provider.of<SubscriptionProvider>(context, listen: false);
+          final currentUser = FirebaseAuth.instance.currentUser;
+          if (currentUser != null) {
+            await subscriptionProvider.decrementIfSubscriptionOrder(
+              currentUser.uid,
+              widget.order.mealType,
+              widget.order.mealPlan,
+              widget.order.serviceName,
+            );
+          }
+
+          _showDeliveredDialog();
         }
-
-        _showDeliveredDialog();
       }
-    }
+    });
   }
 
   /// Show delivered dialog
@@ -646,20 +666,23 @@ class _AdvancedDeliveryTrackingScreenState
                       ),
                     ],
                   ),
-                  Column(
-                    children: [
-                      const Icon(Icons.local_shipping,
-                          color: Color(0xFF1E3A8A), size: 28),
-                      const SizedBox(height: 4),
-                      Text(
-                        _getStatusText(),
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey,
+                  Expanded(
+                    child: Column(
+                      children: [
+                        const Icon(Icons.local_shipping,
+                            color: Color(0xFF1E3A8A), size: 28),
+                        const SizedBox(height: 4),
+                        Text(
+                          _getStatusText(),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -738,21 +761,28 @@ class _AdvancedDeliveryTrackingScreenState
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
-          _buildStep(0, 'Preparing', Icons.restaurant),
+          _buildStep(0, 'Pending', Icons.schedule),
           Expanded(
             child: Container(
               height: 3,
               color: _currentStep > 0 ? Colors.green : Colors.grey[300],
             ),
           ),
-          _buildStep(1, 'On the way', Icons.local_shipping),
+          _buildStep(1, 'Preparing', Icons.restaurant),
           Expanded(
             child: Container(
               height: 3,
               color: _currentStep > 1 ? Colors.green : Colors.grey[300],
             ),
           ),
-          _buildStep(2, 'Delivered', Icons.check_circle),
+          _buildStep(2, 'On the way', Icons.local_shipping),
+          Expanded(
+            child: Container(
+              height: 3,
+              color: _currentStep > 2 ? Colors.green : Colors.grey[300],
+            ),
+          ),
+          _buildStep(3, 'Delivered', Icons.check_circle),
         ],
       ),
     );
@@ -815,10 +845,12 @@ class _AdvancedDeliveryTrackingScreenState
   String _getStatusText() {
     switch (_currentStep) {
       case 0:
-        return 'Preparing';
+        return 'Pending';
       case 1:
-        return 'En route';
+        return 'Preparing';
       case 2:
+        return 'En route';
+      case 3:
         return 'Delivered';
       default:
         return 'Processing';

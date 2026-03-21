@@ -1099,6 +1099,21 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
     }
   }
 
+  Future<Map<String, String?>> _fetchUserDetails() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return {'name': null, 'phone': null};
+    try {
+      final snap = await FirebaseFirestore.instance.collection('user_register').doc(uid).get();
+      if (snap.exists) {
+        return {
+          'name': snap.data()?['name'] as String?,
+          'phone': snap.data()?['phone'] as String?,
+        };
+      }
+    } catch (_) {}
+    return {'name': null, 'phone': null};
+  }
+
   Widget _buildOnlineConfirmButton(OrderProvider orderProvider) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1126,13 +1141,17 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
           // If unique code is applied, order is free
           if (_uniqueCodeApplied) finalAmount = 0.0;
 
+          final userDetails = await _fetchUserDetails();
+
           final updatedOrder = OrderModel(
             id: widget.order.id,
             serviceName: widget.order.serviceName,
             serviceId: widget.order.serviceId,
             date: widget.order.date,
             amount: finalAmount,
-            status: 'Preparing',
+            status: 'Pending',
+            userName: userDetails['name'],
+            userMobile: userDetails['phone'],
             paymentMethod: _selectedPaymentMethod,
             mealType: widget.order.mealType,
             mealPlan: widget.order.mealPlan,
@@ -1250,12 +1269,16 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
           // finalAmount is zero because unique code applied
           var finalAmount = 0.0;
 
+          final userDetails = await _fetchUserDetails();
+
           final updatedOrder = OrderModel(
             id: widget.order.id,
             serviceName: widget.order.serviceName,
             date: widget.order.date,
             amount: finalAmount,
-            status: 'Preparing',
+            status: 'Pending',
+            userName: userDetails['name'],
+            userMobile: userDetails['phone'],
             paymentMethod: _selectedPaymentMethod,
             mealType: widget.order.mealType,
             mealPlan: widget.order.mealPlan,
@@ -1358,7 +1381,7 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
           serviceId: widget.order.serviceId,
           date: widget.order.date,
           amount: finalAmount,
-          status: 'Preparing',
+          status: 'Pending',
           paymentMethod: _selectedPaymentMethod,
           mealType: widget.order.mealType,
           mealPlan: widget.order.mealPlan,
@@ -1377,7 +1400,7 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
               : null,
         );
 
-        orderProvider.updateOrderStatus(widget.order.id, 'Preparing');
+        orderProvider.updateOrderStatus(widget.order.id, 'Pending');
 
         Navigator.push(
           context,
@@ -1465,13 +1488,17 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
             // If unique code is applied, order is free
             if (_uniqueCodeApplied) finalAmount = 0.0;
 
+            final userDetails = await _fetchUserDetails();
+
             final updatedOrder = OrderModel(
               id: widget.order.id,
               serviceName: widget.order.serviceName,
               serviceId: widget.order.serviceId,
               date: widget.order.date,
               amount: finalAmount,
-              status: 'Preparing',
+              status: 'Pending',
+              userName: userDetails['name'],
+              userMobile: userDetails['phone'],
               paymentMethod: _selectedPaymentMethod,
               mealType: widget.order.mealType,
               mealPlan: widget.order.mealPlan,

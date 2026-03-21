@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import 'seller_menu_management_screen.dart';
+import 'seller_orders_screen.dart';
 import 'seller_service_form_screen.dart';
 import 'seller_weekly_menu_screen.dart';
 
@@ -227,6 +228,29 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen> {
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => SellerOrdersScreen(
+                            serviceId: widget.serviceId,
+                            serviceName: serviceName,
+                          ),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.analytics),
+                    label: const Text('View Orders & Subscriptions'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),

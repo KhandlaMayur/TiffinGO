@@ -11,6 +11,8 @@ class OrderModel {
   final String? categoryId; // ID of tiffine category (e.g., 'normal')
   final String subscription;
   final List<String> extraFood;
+  final String? userName;
+  final String? userMobile;
   final Map<String, dynamic>? location;
   final bool paymentCompleted;
   final double rating; // 0-5 stars, 0 means not rated
@@ -32,6 +34,8 @@ class OrderModel {
     this.categoryId,
     required this.subscription,
     required this.extraFood,
+    this.userName,
+    this.userMobile,
     this.location,
     required this.paymentCompleted,
     this.rating = 0, // Default: not rated
@@ -54,6 +58,8 @@ class OrderModel {
       'categoryId': categoryId,
       'subscription': subscription,
       'extraFood': extraFood,
+      'userName': userName,
+      'userMobile': userMobile,
       'location': location,
       'paymentCompleted': paymentCompleted,
       'rating': rating,
@@ -77,6 +83,8 @@ class OrderModel {
       categoryId: json['categoryId'],
       subscription: json['subscription'] ?? 'Daily',
       extraFood: List<String>.from(json['extraFood'] ?? []),
+      userName: json['userName'],
+      userMobile: json['userMobile'],
       location: json['location'],
       paymentCompleted: json['paymentCompleted'] ?? false,
       rating: (json['rating'] ?? 0).toDouble(),
