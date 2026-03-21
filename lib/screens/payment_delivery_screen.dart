@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:io' show Platform;
-import 'dart:math' show sin, cos, atan2, sqrt;
+import 'dart:math' show sin, cos, atan2, sqrt, pi;
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
@@ -14,6 +14,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../providers/firestore_order_provider.dart';
 import '../providers/subscription_provider.dart';
 import '../models/order_model.dart';
+import '../services/tomtom_routing_service.dart';
 import 'advanced_delivery_tracking_screen.dart';
 
 class PaymentDeliveryScreen extends StatefulWidget {
@@ -47,6 +48,7 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
   // Service location will be fetched from Firestore
   double? _serviceLatitude;
   double? _serviceLongitude;
+  double? _serviceRangeKm; // Seller's serviceable range
 
   double _gstAmount = 0.0;
   double _distanceInKm = 0.0;
@@ -101,6 +103,7 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
             setState(() {
               _serviceLatitude = lat;
               _serviceLongitude = lng;
+              _serviceRangeKm = (data?['serviceRangeKm'] as num?)?.toDouble();
             });
 
             // Recalculate distance if location is already available
@@ -151,6 +154,7 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
           setState(() {
             _serviceLatitude = lat;
             _serviceLongitude = lng;
+            _serviceRangeKm = (querySnapshot.docs.first.data()['serviceRangeKm'] as num?)?.toDouble();
           });
 
           // Recalculate distance if location is already available
@@ -170,8 +174,9 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
     }
   }
 
-  // Recalculate delivery charge when both locations are available
-  void _recalculateDeliveryCharge() {
+  // Recalculate delivery charge — uses TomTom road distance for accuracy.
+  // Falls back to Haversine if TomTom is unavailable.
+  Future<void> _recalculateDeliveryCharge() async {
     if (_serviceLatitude == null ||
         _serviceLongitude == null ||
         _currentPosition == null) {
@@ -179,29 +184,63 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
       return;
     }
 
-    setState(() {
-      _distanceInKm = _calculateDistance(
+    // --- Try TomTom road distance first ---
+    double roadDistanceKm = 0.0;
+    try {
+      final route = await TomTomRoutingService.getRoute(
+        startLat: _serviceLatitude!,
+        startLng: _serviceLongitude!,
+        endLat: _currentPosition!.latitude,
+        endLng: _currentPosition!.longitude,
+      );
+      if (route != null) {
+        roadDistanceKm = route.distanceInKm;
+        debugPrint('🛣️ TomTom road distance: $roadDistanceKm km');
+      }
+    } catch (e) {
+      debugPrint('⚠️ TomTom call failed, falling back to Haversine: $e');
+    }
+
+    // --- Fallback: Haversine straight-line ---
+    if (roadDistanceKm == 0.0) {
+      roadDistanceKm = _haversineKm(
         _serviceLatitude!,
         _serviceLongitude!,
         _currentPosition!.latitude,
         _currentPosition!.longitude,
       );
+      debugPrint('📐 Haversine fallback distance: $roadDistanceKm km');
+    }
 
-      debugPrint('📍 Distance calculated: $_distanceInKm km');
+    if (!mounted) return;
+    setState(() {
+      _distanceInKm = roadDistanceKm;
+      debugPrint('📍 Final distance used for billing: $_distanceInKm km');
 
       final subscriptionProvider =
           Provider.of<SubscriptionProvider>(context, listen: false);
-      final hasActiveSubscriptionForCurrentService = subscriptionProvider.hasActiveSubscriptionForService(widget.order.serviceId ?? widget.order.serviceName);
+      final hasActiveSubscriptionForCurrentService = subscriptionProvider
+          .hasActiveSubscriptionForService(widget.order.serviceId ?? widget.order.serviceName);
 
       if (hasActiveSubscriptionForCurrentService) {
-        _deliveryCharge = 0.0; // Free delivery for subscribers
+        _deliveryCharge = 0.0;
         debugPrint('✅ Delivery: FREE (Subscriber)');
       } else {
         _deliveryCharge = _calculateDeliveryCharge(_distanceInKm);
-        debugPrint(
-            '💰 Delivery charge: ₹$_deliveryCharge ($_distanceInKm km × ₹5/km)');
+        debugPrint('💰 Delivery charge: ₹$_deliveryCharge ($_distanceInKm km × ₹5/km)');
       }
     });
+  }
+
+  /// Haversine formula – straight-line distance in km (fallback only).
+  double _haversineKm(double lat1, double lon1, double lat2, double lon2) {
+    const r = 6371.0;
+    final dLat = (lat2 - lat1) * pi / 180;
+    final dLon = (lon2 - lon1) * pi / 180;
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(lat1 * pi / 180) * cos(lat2 * pi / 180) *
+            sin(dLon / 2) * sin(dLon / 2);
+    return r * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 
   Future<void> _launchUpi(String uriString) async {
@@ -426,16 +465,36 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
               !_paymentCompleted)
             _buildUniqueCodeConfirmButton(orderProvider),
 
-          // Payment QR Code (if online)
-          if (_selectedPaymentMethod == 'Online Payment' && !_paymentCompleted)
-            _buildQRCodeSection(),
+          // ── Out-of-range guard: hide payment/confirm buttons ──────────────
+          if (_serviceRangeKm != null && _serviceRangeKm! > 0 && _distanceInKm > _serviceRangeKm!) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.red.shade300),
+              ),
+              child: Center(
+                child: Text(
+                  '🚫 Ordering unavailable — outside delivery range',
+                  style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          ] else ...[ 
+            // Payment QR Code (if online)
+            if (_selectedPaymentMethod == 'Online Payment' && !_paymentCompleted)
+              _buildQRCodeSection(),
 
-          // Confirm Order Button (for online payment)
-          if (_selectedPaymentMethod == 'Online Payment' && !_paymentCompleted)
-            _buildOnlineConfirmButton(orderProvider),
+            // Confirm Order Button (for online payment)
+            if (_selectedPaymentMethod == 'Online Payment' && !_paymentCompleted)
+              _buildOnlineConfirmButton(orderProvider),
 
-          // Track Delivery Button
-          if (_paymentCompleted) _buildTrackDeliveryButton(orderProvider),
+            // Track Delivery Button
+            if (_paymentCompleted) _buildTrackDeliveryButton(orderProvider),
+          ],
         ],
       ),
       bottomNavigationBar: _buildBottomButton(),
@@ -488,6 +547,31 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
           const Divider(),
           _buildSummaryRow(
               'Meal Amount', '₹${widget.order.amount.toStringAsFixed(2)}'),
+
+          // Out-of-range warning
+          if (_serviceRangeKm != null && _serviceRangeKm! > 0 && _distanceInKm > _serviceRangeKm!)
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 10),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.red.shade300),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.location_off, color: Colors.red.shade600, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Delivery not possible — you are ${_distanceInKm.toStringAsFixed(1)} km away. '
+                      'This service delivers only within ${_serviceRangeKm!.toInt()} km.',
+                      style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
           // GST Section (Only compute separately if not zero)
           if (_gstAmount > 0) ...[
@@ -1326,6 +1410,31 @@ class _PaymentDeliveryScreenState extends State<PaymentDeliveryScreen> {
   }
 
   Widget _buildBottomButton() {
+    // Block entirely if outside delivery range
+    final bool outOfRange = _serviceRangeKm != null &&
+        _serviceRangeKm! > 0 &&
+        _distanceInKm > _serviceRangeKm!;
+    if (outOfRange) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        color: Colors.white,
+        child: ElevatedButton.icon(
+          onPressed: null, // disabled
+          icon: const Icon(Icons.location_off),
+          label: Text(
+            'Delivery not available (${_distanceInKm.toStringAsFixed(1)} km > ${_serviceRangeKm!.toInt()} km limit)',
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.red.shade300,
+            foregroundColor: Colors.white,
+            disabledBackgroundColor: Colors.red.shade200,
+            disabledForegroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+      );
+    }
     if (_selectedPaymentMethod == 'Cash on Delivery' && !_paymentCompleted) {
       return Container(
         padding: const EdgeInsets.all(16),

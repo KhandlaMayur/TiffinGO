@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:geocoding/geocoding.dart';
 
 import 'seller_dashboard_screen.dart';
 
@@ -122,6 +123,23 @@ class _SellerServiceFormScreenState extends State<SellerServiceFormScreen> {
           .collection('tiffin_services')
           .doc(widget.userId);
 
+      // Geocode the address to get lat/lng for distance filtering
+      double? lat;
+      double? lng;
+      try {
+        final address = _addressController.text.trim();
+        if (address.isNotEmpty) {
+          final locations = await locationFromAddress(address);
+          if (locations.isNotEmpty) {
+            lat = locations.first.latitude;
+            lng = locations.first.longitude;
+            debugPrint('📍 Geocoded seller address: Lat=$lat, Lng=$lng');
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠️ Geocoding failed: $e');
+      }
+
       await docRef.set({
         'ownerId': widget.userId,
         'ownerName': widget.userName,
@@ -132,6 +150,8 @@ class _SellerServiceFormScreenState extends State<SellerServiceFormScreen> {
         'jainVeg': _jainVeg,
         'serviceRangeKm': double.tryParse(_rangeController.text.trim()) ?? 0.0,
         'tiffinTypes': _selectedTypeIds.toList(),
+        if (lat != null) 'latitude': lat,
+        if (lng != null) 'longitude': lng,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));

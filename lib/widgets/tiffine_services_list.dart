@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:math' show sin, cos, atan2, sqrt, pi;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:provider/provider.dart';
 import '../providers/order_provider.dart';
 import '../models/order_model.dart';
@@ -9,8 +12,9 @@ import '../data/meal_plans_data.dart';
 import '../screens/payment_delivery_screen.dart';
 import '../screens/subscription_screen.dart';
 import '../screens/meal_plan_details_screen.dart';
+import '../services/tomtom_routing_service.dart';
 
-class TiffineServicesList extends StatelessWidget {
+class TiffineServicesList extends StatefulWidget {
   final String searchQuery;
   final ScrollController? scrollController;
 
@@ -20,23 +24,179 @@ class TiffineServicesList extends StatelessWidget {
     this.scrollController,
   });
 
+  @override
+  State<TiffineServicesList> createState() => _TiffineServicesListState();
+}
+
+class _TiffineServicesListState extends State<TiffineServicesList> {
+  double? _userLat;
+  double? _userLng;
+  bool _locationFetched = false;
+
   final List<Map<String, dynamic>> _services = const [];
 
-  List<Map<String, dynamic>> _filterServices(
-      List<Map<String, dynamic>> services) {
-    if (searchQuery.isEmpty) {
-      return services;
+  /// Geocode cache: docId → {lat, lng} (prevents re-geocoding every rebuild)
+  final Map<String, Map<String, double>> _geocodeCache = {};
+  /// Track which doc IDs are currently being geocoded to avoid duplicate calls
+  final Set<String> _geocodingInProgress = {};
+
+  /// TomTom road distance cache: docId → km (avoids repeat API calls)
+  final Map<String, double> _roadDistanceCache = {};
+  /// Track which doc IDs are being fetched via TomTom
+  final Set<String> _roadDistanceFetching = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchUserLocation();
+  }
+
+  Future<void> _fetchUserLocation() async {
+    try {
+      bool enabled = await Geolocator.isLocationServiceEnabled();
+      if (!enabled) { _setLocationFetched(); return; }
+      LocationPermission perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
+        _setLocationFetched(); return;
+      }
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 10),
+      );
+      if (mounted) {
+        setState(() {
+          _userLat = pos.latitude;
+          _userLng = pos.longitude;
+          _locationFetched = true;
+        });
+      }
+    } catch (_) {
+      _setLocationFetched();
     }
-    final query = searchQuery.toLowerCase();
-    return services.where((service) {
-      final name = service['name'].toString().toLowerCase();
-      final description = service['description'].toString().toLowerCase();
-      return name.contains(query) || description.contains(query);
-    }).toList();
+  }
+
+  void _setLocationFetched() {
+    if (mounted) setState(() => _locationFetched = true);
+  }
+
+  /// Haversine formula – distance in km between two GPS points.
+  double _distanceKm(double lat1, double lon1, double lat2, double lon2) {
+    const r = 6371.0;
+    final dLat = (lat2 - lat1) * pi / 180;
+    final dLon = (lon2 - lon1) * pi / 180;
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(lat1 * pi / 180) * cos(lat2 * pi / 180) *
+            sin(dLon / 2) * sin(dLon / 2);
+    return r * 2 * atan2(sqrt(a), sqrt(1 - a));
+  }
+
+  /// Geocode a service's address in the background, save to Firestore, and
+  /// trigger a rebuild so the filter picks up the new coordinates.
+  Future<void> _geocodeServiceAddress(String docId, String address) async {
+    if (_geocodingInProgress.contains(docId) || _geocodeCache.containsKey(docId)) return;
+    _geocodingInProgress.add(docId);
+    try {
+      final locations = await locationFromAddress(address);
+      if (locations.isNotEmpty) {
+        final lat = locations.first.latitude;
+        final lng = locations.first.longitude;
+        _geocodeCache[docId] = {'lat': lat, 'lng': lng};
+        debugPrint('📍 Geocoded "$address" → Lat=$lat, Lng=$lng');
+        // Persist to Firestore so future loads don't need geocoding
+        try {
+          await FirebaseFirestore.instance
+              .collection('tiffin_services')
+              .doc(docId)
+              .update({'latitude': lat, 'longitude': lng});
+        } catch (_) {}
+        if (mounted) setState(() {}); // rebuild with new coords
+      }
+    } catch (e) {
+      debugPrint('⚠️ Failed to geocode "$address": $e');
+    } finally {
+      _geocodingInProgress.remove(docId);
+    }
+  }
+
+  /// Fetch road distance via TomTom for a service, cache the result, and
+  /// trigger a rebuild so the distance chip shows road km.
+  Future<void> _fetchRoadDistance(String docId, double kitchenLat, double kitchenLng) async {
+    if (_roadDistanceFetching.contains(docId) || _roadDistanceCache.containsKey(docId)) return;
+    if (_userLat == null || _userLng == null) return;
+    _roadDistanceFetching.add(docId);
+    try {
+      final route = await TomTomRoutingService.getRoute(
+        startLat: kitchenLat,
+        startLng: kitchenLng,
+        endLat: _userLat!,
+        endLng: _userLng!,
+      );
+      if (route != null) {
+        _roadDistanceCache[docId] = route.distanceInKm;
+        debugPrint('🛣️ TomTom road distance for $docId: ${route.distanceInKm} km');
+        if (mounted) setState(() {});
+      }
+    } catch (e) {
+      debugPrint('⚠️ TomTom failed for $docId: $e');
+    } finally {
+      _roadDistanceFetching.remove(docId);
+    }
+  }
+
+  List<Map<String, dynamic>> _filterServices(List<Map<String, dynamic>> services) {
+    List<Map<String, dynamic>> result = services;
+    if (widget.searchQuery.isNotEmpty) {
+      final q = widget.searchQuery.toLowerCase();
+      result = result.where((s) {
+        final name = s['name'].toString().toLowerCase();
+        final desc = s['description'].toString().toLowerCase();
+        return name.contains(q) || desc.contains(q);
+      }).toList();
+    }
+    // Filter by serviceable range if user location is known
+    if (_userLat != null && _userLng != null) {
+      result = result.where((s) {
+        double? lat = (s['latitude'] as num?)?.toDouble();
+        double? lng = (s['longitude'] as num?)?.toDouble();
+        final rangeKm = (s['serviceRangeKm'] as num?)?.toDouble();
+
+        // Try geocode cache if Firestore has no coords
+        if (lat == null || lng == null) {
+          final cached = _geocodeCache[s['id']];
+          if (cached != null) {
+            lat = cached['lat'];
+            lng = cached['lng'];
+          }
+        }
+
+        // Still no coords → trigger background geocode, hide until known
+        if (lat == null || lng == null) {
+          final address = s['address'] ?? s['description'] ?? '';
+          if (address.toString().isNotEmpty && s['id'] != null) {
+            _geocodeServiceAddress(s['id'], address.toString());
+          }
+          // If service has a range set, hide it until we know coordinates
+          if (rangeKm != null && rangeKm > 0) return false;
+          return true; // no range set → show anyway
+        }
+        if (rangeKm == null || rangeKm <= 0) return true; // no range set → show
+        // Prefer TomTom road distance if cached, else Haversine
+        final dist = _roadDistanceCache[s['id']] ?? _distanceKm(_userLat!, _userLng!, lat, lng);
+        return dist <= rangeKm;
+      }).toList();
+    }
+    return result;
   }
 
   @override
   Widget build(BuildContext context) {
+    if (!_locationFetched) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     return StreamBuilder<QuerySnapshot>(
       stream:
           FirebaseFirestore.instance.collection('tiffin_services').snapshots(),
@@ -99,6 +259,29 @@ class TiffineServicesList extends StatelessWidget {
               currentRating = 4.0 + fractional;
             }
 
+            // Compute distance from user to this kitchen
+            double? distanceKm;
+            double? lat = (data['latitude'] as num?)?.toDouble();
+            double? lng = (data['longitude'] as num?)?.toDouble();
+            // Use geocode cache if Firestore has no coords
+            if (lat == null || lng == null) {
+              final cached = _geocodeCache[doc.id];
+              if (cached != null) {
+                lat = cached['lat'];
+                lng = cached['lng'];
+              }
+            }
+            if (_userLat != null && _userLng != null && lat != null && lng != null) {
+              // Prefer TomTom cached road distance; fall back to Haversine
+              if (_roadDistanceCache.containsKey(doc.id)) {
+                distanceKm = _roadDistanceCache[doc.id];
+              } else {
+                distanceKm = _distanceKm(_userLat!, _userLng!, lat, lng);
+                // Trigger async TomTom fetch so the road distance replaces Haversine
+                _fetchRoadDistance(doc.id, lat, lng);
+              }
+            }
+
             return {
               'id': doc.id,
               'name': data['serviceName'] ?? data['name'] ?? 'Tiffin Service',
@@ -108,9 +291,19 @@ class TiffineServicesList extends StatelessWidget {
                   data['availableTime'] ?? data['deliveryTime'] ?? '',
               'price': priceDisplay,
               'image': data['image'] ?? 'assets/images/kathiyavadi.jpg',
+              'distanceKm': distanceKm,
               ...data,
             };
           }).toList();
+
+          // Sort by distance (closest first) when user location is known
+          if (_userLat != null && _userLng != null) {
+            services.sort((a, b) {
+              final da = (a['distanceKm'] as double?) ?? double.infinity;
+              final db = (b['distanceKm'] as double?) ?? double.infinity;
+              return da.compareTo(db);
+            });
+          }
         }
 
         // Fallback to built-in list when Firestore has no documents.
@@ -120,19 +313,21 @@ class TiffineServicesList extends StatelessWidget {
 
         final filteredServices = _filterServices(services);
 
-        if (filteredServices.isEmpty && searchQuery.isNotEmpty) {
+        if (filteredServices.isEmpty) {
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
-                  Icons.search_off,
+                  widget.searchQuery.isNotEmpty ? Icons.search_off : Icons.location_off,
                   size: 64,
                   color: Colors.grey[400],
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'No Tiffine Service Available',
+                  widget.searchQuery.isNotEmpty
+                      ? 'No Tiffin Service Available'
+                      : 'No services available in your area',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -141,11 +336,14 @@ class TiffineServicesList extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Try searching with different keywords',
+                  widget.searchQuery.isNotEmpty
+                      ? 'Try searching with different keywords'
+                      : 'Services outside your delivery range are hidden',
                   style: TextStyle(
                     fontSize: 14,
                     color: Colors.grey[500],
                   ),
+                  textAlign: TextAlign.center,
                 ),
               ],
             ),
@@ -153,7 +351,7 @@ class TiffineServicesList extends StatelessWidget {
         }
 
         return ListView.builder(
-          controller: scrollController,
+          controller: widget.scrollController,
           padding: const EdgeInsets.all(16),
           itemCount: filteredServices.length,
           itemBuilder: (context, index) {
@@ -164,7 +362,6 @@ class TiffineServicesList extends StatelessWidget {
       },
     );
   }
-
   Widget _buildServiceCard(
       BuildContext context, Map<String, dynamic> service, int index) {
     return Consumer<OrderProvider>(
@@ -326,6 +523,20 @@ class TiffineServicesList extends StatelessWidget {
                             service['price'],
                             Colors.green,
                           ),
+                          // Distance chip
+                          if (service['distanceKm'] != null)
+                            _buildInfoChip(
+                              Icons.near_me,
+                              '${(service['distanceKm'] as double).toStringAsFixed(1)} km away',
+                              Colors.blueGrey,
+                            ),
+                          // Serviceable range badge
+                          if ((service['serviceRangeKm'] as num?) != null && (service['serviceRangeKm'] as num) > 0)
+                            _buildInfoChip(
+                              Icons.delivery_dining,
+                              'Delivers upto ${(service['serviceRangeKm'] as num).toInt()} km',
+                              const Color(0xFF1E3A8A),
+                            ),
                         ],
                       ),
                       const SizedBox(height: 16),

@@ -699,19 +699,24 @@ class _AdvancedDeliveryTrackingScreenState
                 // Delivery Charge Info
                 Consumer<SubscriptionProvider>(
                   builder: (context, subscriptionProvider, child) {
-                    final hasActiveSubscription =
-                        subscriptionProvider.hasActiveSubscription;
+                    final hasActiveSubscription = subscriptionProvider
+                        .hasActiveSubscriptionForService(
+                            widget.order.serviceId ?? widget.order.serviceName);
                     final deliveryCharge = hasActiveSubscription
                         ? 0.0
                         : widget.order.deliveryCharge;
+                    // Always use the distance stored in the order – it was
+                    // calculated with TomTom at payment time so it matches billing.
                     final distance = widget.order.distanceInKm;
 
-                    String deliveryText = distance > 0
-                        ? '₹${deliveryCharge.toStringAsFixed(2)} (${distance.toStringAsFixed(1)} km)'
-                        : '₹${deliveryCharge.toStringAsFixed(2)}';
-
+                    String deliveryText;
                     if (hasActiveSubscription) {
                       deliveryText = 'FREE (Subscribed)';
+                    } else if (distance > 0) {
+                      deliveryText =
+                          '₹${deliveryCharge.toStringAsFixed(2)} (${distance.toStringAsFixed(1)} km)';
+                    } else {
+                      deliveryText = '₹${deliveryCharge.toStringAsFixed(2)}';
                     }
 
                     return _buildDetailRow('Delivery Charge', deliveryText);
