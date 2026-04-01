@@ -60,14 +60,14 @@ class _SellerOrdersScreenState extends State<SellerOrdersScreen>
   /// Subscriptions for this service
   Stream<QuerySnapshot> _subscriptionsStream() {
     return FirebaseFirestore.instance
-        .collection('subscriptions')
+        .collection('user_subscription')
         .where('tiffineService', isEqualTo: widget.serviceId)
         .snapshots();
   }
 
   Stream<QuerySnapshot> _subscriptionsByNameStream() {
     return FirebaseFirestore.instance
-        .collection('subscriptions')
+        .collection('user_subscription')
         .where('tiffineService', isEqualTo: widget.serviceName)
         .snapshots();
   }

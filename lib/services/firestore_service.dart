@@ -39,7 +39,7 @@ class FirestoreService {
   }
 
   Future<String> createSubscription(Map<String, dynamic> data) async {
-    final ref = await _db.collection('subscriptions').add({
+    final ref = await _db.collection('user_subscription').add({
       ...data,
       'createdAt': FieldValue.serverTimestamp(),
     });
@@ -48,7 +48,7 @@ class FirestoreService {
 
   Stream<QuerySnapshot> subscriptionsForUserStream(String uid) {
     return _db
-        .collection('subscriptions')
+        .collection('user_subscription')
         .where('userId', isEqualTo: uid)
         .orderBy('createdAt', descending: true)
         .snapshots();

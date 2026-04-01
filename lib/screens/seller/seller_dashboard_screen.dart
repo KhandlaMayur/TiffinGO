@@ -679,39 +679,51 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen> {
             onPressed: () async {
               final text = complaintController.text.trim();
               if (text.isEmpty) return;
+              
+              if (mounted) {
+                // Show loading indicator
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (_) => const Center(child: CircularProgressIndicator()),
+                );
+              }
+
               try {
-                await FirebaseFirestore.instance.collection('complaints').add({
-                  'message': text,
-                  'from': 'seller',
-                  'sellerId': widget.serviceId,
-                  'sellerName': '',
-                  'createdAt': FieldValue.serverTimestamp(),
-                  'status': 'pending',
-                });
-                // Try to get seller name
+                // Fetch seller details first
+                String sellerName = 'Unknown Seller';
+                String sellerEmail = '';
                 try {
                   final doc = await FirebaseFirestore.instance
                       .collection('seller_register')
                       .doc(widget.serviceId)
                       .get();
                   if (doc.exists) {
-                    await FirebaseFirestore.instance
-                        .collection('complaints')
-                        .where('sellerId', isEqualTo: widget.serviceId)
-                        .orderBy('createdAt', descending: true)
-                        .limit(1)
-                        .get()
-                        .then((snap) {
-                      if (snap.docs.isNotEmpty) {
-                        snap.docs.first.reference.update({
-                          'sellerName': doc.data()?['name'] ?? 'Unknown Seller',
-                        });
-                      }
-                    });
+                    final data = doc.data();
+                    if (data != null) {
+                      sellerName = data['name'] ?? 'Unknown Seller';
+                      sellerEmail = data['email'] ?? '';
+                    }
                   }
                 } catch (_) {}
 
-                if (ctx.mounted) Navigator.pop(ctx);
+                // Submit complaint with required fields for Admin UI
+                await FirebaseFirestore.instance.collection('complaints').add({
+                  'subject': 'Issue reported by Seller',
+                  'message': text,
+                  'fromName': sellerName,
+                  'fromRole': 'seller',
+                  'fromEmail': sellerEmail,
+                  'fromUid': widget.serviceId,
+                  'createdAt': FieldValue.serverTimestamp(),
+                  'status': 'open', // using 'open' to match admin filter
+                });
+
+                if (ctx.mounted) {
+                  Navigator.pop(ctx); // Close loading indicator
+                  Navigator.pop(ctx); // Close dialog
+                }
+                
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -721,6 +733,9 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen> {
                   );
                 }
               } catch (e) {
+                if (ctx.mounted) {
+                  Navigator.pop(ctx); // Close loading indicator
+                }
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
