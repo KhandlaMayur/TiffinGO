@@ -30,16 +30,56 @@ class _SellerMenuManagementScreenState
   final Map<String, TextEditingController> _priceControllers = {};
 
   /// Plan IDs that this seller currently offers.
-  ///
-  /// This is loaded from the seller service document's `tiffinTypes` field.
   List<String> _planIds = [];
 
   bool _isLoadingPlanIds = true;
 
+  // Day picker state
+  final List<String> _days = [
+    'monday',
+    'tuesday',
+    'wednesday',
+    'thursday',
+    'friday',
+    'saturday',
+    'sunday',
+  ];
+  late String _selectedDay;
+
+  // Track whether an override exists for the selected day
+  bool _hasOverrideForSelectedDay = false;
+
   @override
   void initState() {
     super.initState();
+    // Default to today's weekday
+    _selectedDay = _weekdayToString(DateTime.now().weekday);
     _loadServiceConfig();
+  }
+
+  String _weekdayToString(int weekday) {
+    const names = [
+      'monday',
+      'tuesday',
+      'wednesday',
+      'thursday',
+      'friday',
+      'saturday',
+      'sunday',
+    ];
+    return names[weekday - 1];
+  }
+
+  /// Compute the YYYY-MM-DD for the next occurrence of [dayName] within the
+  /// current week (Mon-Sun). If the day has already passed this week, use the
+  /// next week's occurrence.
+  String _dateKeyForDay(String dayName) {
+    final now = DateTime.now();
+    final targetWeekday = _days.indexOf(dayName.toLowerCase()) + 1; // 1=Mon
+    int diff = targetWeekday - now.weekday;
+    if (diff < 0) diff += 7; // next week
+    final targetDate = DateTime(now.year, now.month, now.day + diff);
+    return targetDate.toIso8601String().split('T')[0];
   }
 
   Future<void> _loadServiceConfig() async {
@@ -66,11 +106,11 @@ class _SellerMenuManagementScreenState
 
     _initControllersForPlans();
 
-    // Load existing menus and prices for the selected types.
-    await Future.wait([
-      _loadExistingMenus(),
-      _loadExistingPrices(data),
-    ]);
+    // Load existing prices.
+    await _loadExistingPrices(data);
+
+    // Load menu for default selected day.
+    await _loadMenuForSelectedDay();
 
     if (!mounted) return;
     setState(() {
@@ -79,7 +119,6 @@ class _SellerMenuManagementScreenState
   }
 
   void _initControllersForPlans() {
-    // Dispose old controllers if reinitializing.
     for (final controller in _controllers.values) {
       controller.dispose();
     }
@@ -131,44 +170,60 @@ class _SellerMenuManagementScreenState
     if (mounted) setState(() {});
   }
 
-  @override
-  void dispose() {
-    for (final controller in _controllers.values) {
-      controller.dispose();
+  /// Load menu data for the currently selected day.
+  ///
+  /// Priority:
+  /// 1. Override for the selected day's date key → show override items.
+  /// 2. Default weekly menu for that day → show as editable defaults.
+  Future<void> _loadMenuForSelectedDay() async {
+    // Clear existing menu text
+    for (final plan in _planIds) {
+      _controllers['veg_$plan']?.text = '';
+      _controllers['jain_$plan']?.text = '';
     }
-    for (final controller in _priceControllers.values) {
-      controller.dispose();
-    }
-    super.dispose();
-  }
 
-  Future<void> _loadExistingMenus() async {
     final doc = await FirebaseFirestore.instance
         .collection('mealPlans')
         .doc('menus')
         .get();
 
-    if (!doc.exists) return;
+    if (!doc.exists) {
+      _hasOverrideForSelectedDay = false;
+      if (mounted) setState(() {});
+      return;
+    }
 
     final data = (doc.data() ?? {})[widget.serviceId];
-    if (data is! Map<String, dynamic>) return;
+    if (data is! Map<String, dynamic>) {
+      _hasOverrideForSelectedDay = false;
+      if (mounted) setState(() {});
+      return;
+    }
 
-    // Use today's override menu (if any) for display; otherwise fall back to the
-    // standard weekly menu used by the app.
-    final todayKey = DateTime.now().toIso8601String().split('T')[0];
+    final targetDateKey = _dateKeyForDay(_selectedDay);
     final overrides = (data['overrides'] as Map<String, dynamic>?) ?? {};
-    final todayOverride = overrides[todayKey] as Map<String, dynamic>?;
+    final dayOverride = overrides[targetDateKey] as Map<String, dynamic>?;
+
+    _hasOverrideForSelectedDay = dayOverride != null;
 
     for (final plan in _planIds) {
-      final vegOverrideList = ((todayOverride?['veg'] ?? {})
-          as Map<String, dynamic>?)?[plan] as List<dynamic>?;
-      final jainOverrideList = ((todayOverride?['jain'] ?? {})
-          as Map<String, dynamic>?)?[plan] as List<dynamic>?;
+      List<dynamic>? vegList;
+      List<dynamic>? jainList;
 
-      final vegList = vegOverrideList ??
-          ((data['veg'] ?? {})[plan] ?? {})['monday'] as List<dynamic>?;
-      final jainList = jainOverrideList ??
-          ((data['jain'] ?? {})[plan] ?? {})['monday'] as List<dynamic>?;
+      if (dayOverride != null) {
+        // Use override data
+        vegList = ((dayOverride['veg'] ?? {}) as Map<String, dynamic>?)?[plan]
+            as List<dynamic>?;
+        jainList = ((dayOverride['jain'] ?? {}) as Map<String, dynamic>?)?[plan]
+            as List<dynamic>?;
+      } else {
+        // Fall back to default weekly menu for this day
+        vegList = ((data['veg'] ?? {})[plan] ?? {})[_selectedDay.toLowerCase()]
+            as List<dynamic>?;
+        jainList =
+            ((data['jain'] ?? {})[plan] ?? {})[_selectedDay.toLowerCase()]
+                as List<dynamic>?;
+      }
 
       if (vegList != null && vegList.isNotEmpty) {
         _controllers['veg_$plan']?.text = vegList.join(', ');
@@ -178,7 +233,18 @@ class _SellerMenuManagementScreenState
       }
     }
 
-    setState(() {});
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _controllers.values) {
+      controller.dispose();
+    }
+    for (final controller in _priceControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
   }
 
   Future<void> _saveMenu() async {
@@ -201,9 +267,7 @@ class _SellerMenuManagementScreenState
     });
 
     try {
-      // We treat "Manage Standard Menu" as a way for sellers to update today's menu.
-      // This is stored under mealPlans/menus/{serviceId}/overrides/{YYYY-MM-DD}.
-      final todayKey = DateTime.now().toIso8601String().split('T')[0];
+      final targetDateKey = _dateKeyForDay(_selectedDay);
 
       final Map<String, dynamic> overrideData = {
         'veg': {},
@@ -243,19 +307,19 @@ class _SellerMenuManagementScreenState
         };
       }
 
-      // Save override for the current date.
+      // Save override for the selected day's date.
       final docRef =
           FirebaseFirestore.instance.collection('mealPlans').doc('menus');
 
       await docRef.set({
         widget.serviceId: {
           'overrides': {
-            todayKey: overrideData,
+            targetDateKey: overrideData,
           },
         },
       }, SetOptions(merge: true));
 
-      // Save prices to the tiffin service document so user can see the correct price
+      // Save prices to the tiffin service document
       await FirebaseFirestore.instance
           .collection('tiffin_services')
           .doc(widget.serviceId)
@@ -264,14 +328,17 @@ class _SellerMenuManagementScreenState
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      // Refresh in case other fields are updated elsewhere.
-      await _loadExistingMenus();
+      // Reload to reflect saved state.
+      await _loadMenuForSelectedDay();
 
       if (!mounted) return;
 
+      final dayLabel =
+          _selectedDay[0].toUpperCase() + _selectedDay.substring(1);
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Menu updated successfully.'),
+        SnackBar(
+          content: Text('$dayLabel\'s menu override saved successfully.'),
           backgroundColor: Colors.green,
         ),
       );
@@ -289,6 +356,71 @@ class _SellerMenuManagementScreenState
           _isLoading = false;
         });
       }
+    }
+  }
+
+  /// Remove the override for the selected day so the weekly menu is used
+  /// instead.
+  Future<void> _removeOverride() async {
+    final dayLabel = _selectedDay[0].toUpperCase() + _selectedDay.substring(1);
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove Override?'),
+        content: Text(
+          'This will remove the custom menu for $dayLabel and revert to the default weekly menu.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final targetDateKey = _dateKeyForDay(_selectedDay);
+
+      await FirebaseFirestore.instance
+          .collection('mealPlans')
+          .doc('menus')
+          .update({
+        '${widget.serviceId}.overrides.$targetDateKey': FieldValue.delete(),
+      });
+
+      await _loadMenuForSelectedDay();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text('$dayLabel override removed. Weekly menu will be used.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to remove override: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -324,9 +456,76 @@ class _SellerMenuManagementScreenState
     );
   }
 
+  Widget _buildDayPicker() {
+    return SizedBox(
+      height: 44,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: _days.map((day) {
+          final isSelected = _selectedDay == day;
+          final isToday =
+              _weekdayToString(DateTime.now().weekday) == day;
+          final label = day[0].toUpperCase() + day.substring(1, 3);
+          return GestureDetector(
+            onTap: () async {
+              setState(() => _selectedDay = day);
+              await _loadMenuForSelectedDay();
+            },
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? const Color(0xFF001F54)
+                    : isToday
+                        ? const Color(0xFF001F54).withOpacity(0.1)
+                        : Colors.grey[100],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isSelected
+                      ? const Color(0xFF001F54)
+                      : isToday
+                          ? const Color(0xFF001F54).withOpacity(0.3)
+                          : Colors.grey[300]!,
+                ),
+              ),
+              child: Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: isSelected ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                    if (isToday && !isSelected) ...[
+                      const SizedBox(width: 4),
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF001F54),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     const navy = Color(0xFF001F54);
+    final dayLabel = _selectedDay[0].toUpperCase() + _selectedDay.substring(1);
 
     return Scaffold(
       appBar: AppBar(
@@ -346,11 +545,72 @@ class _SellerMenuManagementScreenState
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          // Instruction text
                           const Text(
-                            'This updates today\'s menu (overrides weekly menu) for users once saved.',
+                            'Select a day and update its menu. The override applies only for that single day and reverts to the weekly menu automatically.',
                             style: TextStyle(color: Colors.grey),
                           ),
                           const SizedBox(height: 16),
+
+                          // Day picker
+                          const Text(
+                            'Select Day to Override',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: navy,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          _buildDayPicker(),
+                          const SizedBox(height: 12),
+
+                          // Override status badge
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: _hasOverrideForSelectedDay
+                                  ? Colors.orange.withOpacity(0.1)
+                                  : Colors.blue.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: _hasOverrideForSelectedDay
+                                    ? Colors.orange
+                                    : Colors.blue,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _hasOverrideForSelectedDay
+                                      ? Icons.edit_note
+                                      : Icons.info_outline,
+                                  size: 18,
+                                  color: _hasOverrideForSelectedDay
+                                      ? Colors.orange
+                                      : Colors.blue,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _hasOverrideForSelectedDay
+                                        ? '$dayLabel has a custom override. Editing override menu.'
+                                        : '$dayLabel is using the default weekly menu. Save to create an override.',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: _hasOverrideForSelectedDay
+                                          ? Colors.orange[800]
+                                          : Colors.blue[800],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Menu fields per plan
                           ..._planIds.map((plan) {
                             final displayName = plan[0].toUpperCase() +
                                 plan.substring(1).replaceAll('_', ' ');
@@ -435,11 +695,24 @@ class _SellerMenuManagementScreenState
                                 const SizedBox(height: 16),
                               ],
                             );
-                          }).toList(),
+                          }),
+
+                          // Save button
                           SizedBox(
                             height: 50,
-                            child: ElevatedButton(
+                            child: ElevatedButton.icon(
                               onPressed: _isLoading ? null : _saveMenu,
+                              icon: const Icon(Icons.save),
+                              label: _isLoading
+                                  ? const CircularProgressIndicator(
+                                      color: Colors.white)
+                                  : Text(
+                                      'Save $dayLabel Override',
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: navy,
                                 foregroundColor: Colors.white,
@@ -447,18 +720,36 @@ class _SellerMenuManagementScreenState
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
-                              child: _isLoading
-                                  ? const CircularProgressIndicator(
-                                      color: Colors.white)
-                                  : const Text(
-                                      'Save Menu',
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
                             ),
                           ),
+
+                          // Remove override button (only shown when override exists)
+                          if (_hasOverrideForSelectedDay) ...[
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              height: 50,
+                              child: OutlinedButton.icon(
+                                onPressed:
+                                    _isLoading ? null : _removeOverride,
+                                icon: const Icon(Icons.restore,
+                                    color: Colors.red),
+                                label: Text(
+                                  'Remove $dayLabel Override (Revert to Weekly)',
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.red,
+                                  ),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(color: Colors.red),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 20),
                         ],
                       ),

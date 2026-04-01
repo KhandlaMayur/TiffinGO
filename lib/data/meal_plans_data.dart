@@ -16,7 +16,8 @@ class MealPlansData {
   static Future<List<String>> getDailyMenu(
       String service, String menuType, String planType, String day,
       {bool forceRefresh = false}) async {
-    await loadData(forceRefresh: forceRefresh);
+    // Always force-refresh so that seller overrides are picked up immediately.
+    await loadData(forceRefresh: true);
 
     // If the cached data doesn't contain this service, try reloading once.
     if (_dailyMenus != null && !_dailyMenus!.containsKey(service)) {

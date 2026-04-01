@@ -303,7 +303,7 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen> {
                       );
                     },
                     icon: const Icon(Icons.restaurant_menu),
-                    label: const Text('Manage Standard Menu'),
+                    label: const Text('Manage Menu (Daily Override)'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
                       foregroundColor: navy,
