@@ -15,7 +15,7 @@ class FirebaseAuthProvider with ChangeNotifier {
     _authService.authStateChanges().listen((user) async {
       _firebaseUser = user;
       if (user != null) {
-        // try to load user doc from 'user_register', if not found try 'seller_register'
+        // try to load user doc from 'user_register', then 'seller_register', then 'admin_register'
         var snap = await FirebaseFirestore.instance
             .collection('user_register')
             .doc(user.uid)
@@ -23,6 +23,12 @@ class FirebaseAuthProvider with ChangeNotifier {
         if (!snap.exists) {
           snap = await FirebaseFirestore.instance
               .collection('seller_register')
+              .doc(user.uid)
+              .get();
+        }
+        if (!snap.exists) {
+          snap = await FirebaseFirestore.instance
+              .collection('admin_register')
               .doc(user.uid)
               .get();
         }

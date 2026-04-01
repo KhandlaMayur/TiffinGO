@@ -36,7 +36,11 @@ class AuthService {
     final user = cred.user;
     if (user != null) {
       try {
-        final collectionName = role.toLowerCase() == 'seller' ? 'seller_login' : 'user_login';
+        final collectionName = role.toLowerCase() == 'admin'
+            ? 'admin_login'
+            : role.toLowerCase() == 'seller'
+                ? 'seller_login'
+                : 'user_login';
         // Store login info in appropriate collection
         await _db.collection(collectionName).doc(user.uid).set(
           {

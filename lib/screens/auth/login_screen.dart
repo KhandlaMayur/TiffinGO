@@ -6,6 +6,7 @@ import '../../providers/firebase_auth_provider.dart';
 import '../landing_screen.dart';
 import '../seller/seller_dashboard_screen.dart';
 import '../seller/seller_service_form_screen.dart';
+import '../admin/admin_dashboard_screen.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -72,10 +73,14 @@ class _LoginScreenState extends State<LoginScreen> {
     var emailOrContact = _emailController.text.trim();
     final password = _passwordController.text;
 
-    // If the app has a pending email (waiting OTP verification) and it
-    // matches this email, prevent login until verification.
-    final pending = authProvider.pendingEmail;
+    // ── ADMIN LOGIN (hardcoded credentials, no registration needed) ──
+    if (_selectedRole.toLowerCase() == 'admin') {
+      await _handleAdminLogin(emailOrContact, password);
+      return;
+    }
 
+    // ── USER / SELLER LOGIN (original flow) ──
+    final pending = authProvider.pendingEmail;
     String? emailToLogin;
 
     final collectionName = _selectedRole.toLowerCase() == 'seller'
@@ -237,6 +242,100 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  /// Admin login — validates against Firestore `admin_login` collection.
+  /// No Firebase Auth required. Credentials are stored in Firestore.
+  Future<void> _handleAdminLogin(String input, String password) async {
+    // Hardcoded admin credentials (used to seed Firestore doc if missing)
+    const adminEmail = 'khandlamayur90@gmail.com';
+    const adminPhone = '8401102212';
+    const adminPassword = 'Nefm@139';
+    const adminDocId = 'admin_main'; // fixed doc ID
+
+    try {
+      // Ensure the admin_login document exists in Firestore
+      final docRef = FirebaseFirestore.instance
+          .collection('admin_login')
+          .doc(adminDocId);
+
+      final doc = await docRef.get();
+      if (!doc.exists) {
+        // First time — seed the admin credentials into Firestore
+        await docRef.set({
+          'email': adminEmail,
+          'phone': adminPhone,
+          'password': adminPassword,
+          'name': 'Admin',
+          'role': 'admin',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      // Now read the admin doc to validate credentials
+      final adminDoc = await docRef.get();
+      final data = adminDoc.data()!;
+      final storedEmail = (data['email'] ?? '').toString().toLowerCase();
+      final storedPhone = (data['phone'] ?? '').toString();
+      final storedPassword = (data['password'] ?? '').toString();
+
+      // Check if input matches stored email or phone
+      final isPhone = RegExp(r'^[0-9]+$').hasMatch(input);
+      final inputMatches = isPhone
+          ? input == storedPhone
+          : input.toLowerCase() == storedEmail;
+
+      if (!inputMatches) {
+        setState(() => _isLoading = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Invalid admin email or phone.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      if (password != storedPassword) {
+        setState(() => _isLoading = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Invalid admin password.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Credentials match — update last login time
+      await docRef.update({
+        'lastLoginAt': FieldValue.serverTimestamp(),
+        'loginCount': FieldValue.increment(1),
+      });
+
+      setState(() => _isLoading = false);
+      if (!mounted) return;
+
+      // Navigate to Admin Dashboard
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+            builder: (context) => const AdminDashboardScreen()),
+      );
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Admin login error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     const navy = Color(0xFF001F54);
@@ -340,6 +439,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                   DropdownMenuItem(
                                     value: 'seller',
                                     child: Text('Seller'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'admin',
+                                    child: Text('Admin'),
                                   ),
                                 ],
                                 onChanged: (value) {

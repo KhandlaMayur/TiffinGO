@@ -1,0 +1,267 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+
+class AdminOrdersScreen extends StatefulWidget {
+  const AdminOrdersScreen({super.key});
+
+  @override
+  State<AdminOrdersScreen> createState() => _AdminOrdersScreenState();
+}
+
+class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
+  static const _navy = Color(0xFF001F54);
+  String _filterStatus = 'all'; // all, pending, completed, cancelled
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // Filter chips
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _filterChip('All', 'all'),
+                const SizedBox(width: 8),
+                _filterChip('Pending', 'pending'),
+                const SizedBox(width: 8),
+                _filterChip('Completed', 'completed'),
+                const SizedBox(width: 8),
+                _filterChip('Cancelled', 'cancelled'),
+              ],
+            ),
+          ),
+        ),
+        // Orders list
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('orders')
+                .orderBy('createdAt', descending: true)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return const Center(
+                    child: Text('No orders found.',
+                        style: TextStyle(color: Colors.grey)));
+              }
+
+              var docs = snapshot.data!.docs;
+              if (_filterStatus != 'all') {
+                docs = docs.where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  return (data['status'] ?? 'pending')
+                          .toString()
+                          .toLowerCase() ==
+                      _filterStatus;
+                }).toList();
+              }
+
+              return ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: docs.length,
+                itemBuilder: (context, index) {
+                  final doc = docs[index];
+                  final data = doc.data() as Map<String, dynamic>;
+                  return _buildOrderCard(doc.id, data);
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _filterChip(String label, String value) {
+    final isSelected = _filterStatus == value;
+    return GestureDetector(
+      onTap: () => setState(() => _filterStatus = value),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? _navy : Colors.grey[100],
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+              color: isSelected ? _navy : Colors.grey[300]!),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.white : Colors.black87,
+            fontWeight: FontWeight.w600,
+            fontSize: 13,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOrderCard(String docId, Map<String, dynamic> data) {
+    final status = (data['status'] ?? 'pending').toString();
+    final total = data['totalPrice'] ?? data['total'] ?? 0;
+    final userContact = data['userContact'] ?? data['userId'] ?? '—';
+    final serviceName = data['serviceName'] ?? data['tiffineService'] ?? '—';
+    final items = data['items'] ?? data['mealPlan'] ?? '—';
+    final createdAt = data['createdAt'] as Timestamp?;
+    final dateStr = createdAt != null
+        ? '${createdAt.toDate().day}/${createdAt.toDate().month}/${createdAt.toDate().year}'
+        : '—';
+
+    Color statusColor;
+    switch (status.toLowerCase()) {
+      case 'completed':
+        statusColor = Colors.green;
+        break;
+      case 'cancelled':
+        statusColor = Colors.red;
+        break;
+      default:
+        statusColor = Colors.orange;
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Order #${docId.substring(0, 8)}',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: _navy),
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: statusColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: statusColor.withOpacity(0.5)),
+                  ),
+                  child: Text(
+                    status.toUpperCase(),
+                    style: TextStyle(
+                        color: statusColor,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            _infoRow('User', userContact.toString()),
+            _infoRow('Service', serviceName.toString()),
+            _infoRow('Items', items.toString()),
+            _infoRow('Date', dateStr),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '₹${(total is num) ? total.toStringAsFixed(0) : total}',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 20,
+                      color: _navy),
+                ),
+                if (status.toLowerCase() != 'cancelled')
+                  OutlinedButton.icon(
+                    onPressed: () => _cancelOrder(docId),
+                    icon: const Icon(Icons.cancel, size: 16, color: Colors.red),
+                    label: const Text('Cancel',
+                        style: TextStyle(color: Colors.red, fontSize: 12)),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: Colors.red.withOpacity(0.5)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _infoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 60,
+            child: Text('$label:',
+                style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500)),
+          ),
+          Expanded(
+              child: Text(value,
+                  style: const TextStyle(fontSize: 13),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis)),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _cancelOrder(String docId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cancel Order?'),
+        content: const Text('Are you sure you want to cancel this order?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('No')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red, foregroundColor: Colors.white),
+            child: const Text('Cancel Order'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('orders')
+          .doc(docId)
+          .update({'status': 'cancelled'});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Order cancelled.'),
+              backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+}

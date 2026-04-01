@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -391,6 +392,38 @@ class _AccountDrawerState extends State<AccountDrawer> {
                           ),
                         ),
                         const SizedBox(height: 20),
+                        // Report Issue Button
+                        SizedBox(
+                          width: double.infinity,
+                          child: TextButton.icon(
+                            onPressed: () => _showReportIssueDialog(
+                                context, authProvider, firebaseAuthProvider),
+                            icon: Icon(
+                              Icons.report_problem_outlined,
+                              color: Colors.orange[700],
+                            ),
+                            label: Text(
+                              'Report Issue / Complaint',
+                              style: TextStyle(
+                                color: Colors.orange[700],
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            style: TextButton.styleFrom(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                side: BorderSide(
+                                  color: Colors.orange[700]!,
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
                         // Logout Button
                         SizedBox(
                           width: double.infinity,
@@ -563,6 +596,122 @@ class _AccountDrawerState extends State<AccountDrawer> {
           ),
         );
       },
+    );
+  }
+
+  void _showReportIssueDialog(BuildContext context, AuthProvider authProvider,
+      FirebaseAuthProvider firebaseAuthProvider) {
+    final subjectController = TextEditingController();
+    final messageController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.report_problem, color: Colors.orange[700]),
+            const SizedBox(width: 8),
+            const Text('Report Issue'),
+          ],
+        ),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: subjectController,
+                decoration: const InputDecoration(
+                  labelText: 'Subject',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Enter subject' : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: messageController,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  labelText: 'Describe the issue',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Enter details' : null,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              subjectController.dispose();
+              messageController.dispose();
+              Navigator.pop(ctx);
+            },
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (!formKey.currentState!.validate()) return;
+
+              final uid = firebaseAuthProvider.firebaseUser?.uid;
+              final userDoc = firebaseAuthProvider.userDoc;
+              final name = userDoc?['name'] ??
+                  userDoc?['fullName'] ??
+                  authProvider.currentUser?.fullName ??
+                  'Unknown';
+              final email = userDoc?['email'] ??
+                  authProvider.currentUser?.email ??
+                  '—';
+              final role = userDoc?['role'] ?? 'user';
+
+              try {
+                await FirebaseFirestore.instance
+                    .collection('complaints')
+                    .add({
+                  'subject': subjectController.text.trim(),
+                  'message': messageController.text.trim(),
+                  'fromUid': uid,
+                  'fromName': name,
+                  'fromEmail': email,
+                  'fromRole': role,
+                  'status': 'open',
+                  'createdAt': FieldValue.serverTimestamp(),
+                });
+
+                subjectController.dispose();
+                messageController.dispose();
+                if (ctx.mounted) Navigator.pop(ctx);
+
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content:
+                          Text('Complaint submitted. We will review it soon.'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content: Text('Error: $e'),
+                        backgroundColor: Colors.red),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange[700],
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
     );
   }
 

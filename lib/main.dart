@@ -11,6 +11,7 @@ import 'screens/splash_screen.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/register_screen.dart';
 import 'screens/landing_screen.dart';
+import 'screens/admin/admin_dashboard_screen.dart';
 import 'providers/auth_provider.dart';
 import 'providers/location_provider.dart';
 import 'providers/order_provider.dart';
@@ -126,6 +127,7 @@ class _TiffineAppState extends State<TiffineApp> {
               '/login': (context) => const LoginScreen(),
               '/register': (context) => const RegisterScreen(),
               '/home': (context) => const LandingScreen(),
+              '/admin': (context) => const AdminDashboardScreen(),
             },
             debugShowCheckedModeBanner: false,
             // Builder wraps the entire app with network monitoring
