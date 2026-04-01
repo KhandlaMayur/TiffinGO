@@ -147,6 +147,33 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
+    // Check if user is blocked or seller is disabled
+    final regData = sellerSnap.docs.first.data();
+    if (_selectedRole.toLowerCase() == 'user' && regData['isBlocked'] == true) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Your account has been blocked by the admin. Please contact support.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+    if (_selectedRole.toLowerCase() == 'seller' && regData['isDisabled'] == true) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Your seller account is disabled by the admin. Please contact support.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
     try {
       final user = await firebaseAuth.loginWithEmail(emailToLogin, password,
           role: _selectedRole);

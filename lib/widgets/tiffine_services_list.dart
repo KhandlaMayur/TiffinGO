@@ -207,8 +207,11 @@ class _TiffineServicesListState extends State<TiffineServicesList> {
           services = snapshot.data!.docs.where((doc) {
             final data = doc.data() as Map<String, dynamic>;
             final name = data['serviceName'] ?? data['name'] ?? 'Tiffin Service';
-            // Exclude closed services and generic 'Tiffin Service' placeholder docs
-            return data['isClosed'] != true && name.toString().toLowerCase() != 'tiffin service';
+            // Exclude closed, unapproved, disabled services and placeholder docs
+            return data['isClosed'] != true &&
+                data['isApproved'] != false &&
+                data['isDisabled'] != true &&
+                name.toString().toLowerCase() != 'tiffin service';
           }).map((doc) {
             final data = doc.data() as Map<String, dynamic>;
             

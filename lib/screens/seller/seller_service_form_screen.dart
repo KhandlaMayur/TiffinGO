@@ -140,7 +140,13 @@ class _SellerServiceFormScreenState extends State<SellerServiceFormScreen> {
         debugPrint('⚠️ Geocoding failed: $e');
       }
 
-      await docRef.set({
+      // Check if this is a new service (first time creation)
+      final existingDoc = await docRef.get();
+      final isNewService = !existingDoc.exists;
+      final currentData = isNewService ? null : existingDoc.data() as Map<String, dynamic>?;
+      final isRejected = currentData?['approvalStatus'] == 'rejected';
+
+      final serviceData = <String, dynamic>{
         'ownerId': widget.userId,
         'ownerName': widget.userName,
         'serviceName': _serviceNameController.text.trim(),
@@ -152,15 +158,36 @@ class _SellerServiceFormScreenState extends State<SellerServiceFormScreen> {
         'tiffinTypes': _selectedTypeIds.toList(),
         if (lat != null) 'latitude': lat,
         if (lng != null) 'longitude': lng,
-        'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      };
+
+      // First-time service or re-submitting after rejection: set isApproved to false (admin must approve)
+      if (isNewService || isRejected) {
+        serviceData['isApproved'] = false;
+        serviceData['approvalStatus'] = 'pending';
+        serviceData['createdAt'] = FieldValue.serverTimestamp();
+      }
+
+      await docRef.set(serviceData, SetOptions(merge: true));
+
+      // Also sync approval status to seller_register so admin can see the request
+      if (isNewService || isRejected) {
+        await FirebaseFirestore.instance
+            .collection('seller_register')
+            .doc(widget.userId)
+            .update({
+          'isApproved': false,
+          'approvalStatus': 'pending',
+        });
+      }
 
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Service saved. Welcome to your dashboard!'),
+        SnackBar(
+          content: Text(isNewService || isRejected
+              ? 'Service submitted for admin approval. Please wait.'
+              : 'Service updated successfully!'),
           backgroundColor: Colors.green,
         ),
       );

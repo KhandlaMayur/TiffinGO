@@ -24,6 +24,12 @@ class AuthService {
       final role = (extraFields?['role']?.toString().toLowerCase()) ?? 'user';
       final collectionName = role == 'seller' ? 'seller_register' : 'user_register';
 
+      // Sellers start as not approved — admin must approve
+      if (role == 'seller') {
+        data['isApproved'] = false;
+        data['approvalStatus'] = 'pending';
+      }
+
       // Store registration info in appropriate collection
       await _db.collection(collectionName).doc(user.uid).set(data);
     }

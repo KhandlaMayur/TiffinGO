@@ -8,14 +8,51 @@ class AdminServicesScreen extends StatefulWidget {
   State<AdminServicesScreen> createState() => _AdminServicesScreenState();
 }
 
-class _AdminServicesScreenState extends State<AdminServicesScreen> {
+class _AdminServicesScreenState extends State<AdminServicesScreen>
+    with SingleTickerProviderStateMixin {
   static const _navy = Color(0xFF001F54);
   String _searchQuery = '';
+  // Filter: 'pending', 'all', 'approved', 'rejected'
+  String _filter = 'pending';
+
+  late final TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 4, vsync: this);
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) {
+        final filters = ['pending', 'all', 'approved', 'rejected'];
+        setState(() => _filter = filters[_tabController.index]);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
+        // Filter tabs
+        TabBar(
+          controller: _tabController,
+          labelColor: _navy,
+          unselectedLabelColor: Colors.grey,
+          indicatorColor: _navy,
+          indicatorSize: TabBarIndicatorSize.label,
+          tabs: const [
+            Tab(text: 'Pending'),
+            Tab(text: 'All'),
+            Tab(text: 'Approved'),
+            Tab(text: 'Rejected'),
+          ],
+        ),
         Padding(
           padding: const EdgeInsets.all(16),
           child: TextField(
@@ -48,6 +85,25 @@ class _AdminServicesScreenState extends State<AdminServicesScreen> {
               }
 
               var docs = snapshot.data!.docs;
+
+              // Apply filter
+              docs = docs.where((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                final status = (data['approvalStatus'] as String?) ?? 
+                    ((data['isApproved'] as bool? ?? false) ? 'approved' : 'pending');
+                switch (_filter) {
+                  case 'pending':
+                    return status == 'pending';
+                  case 'approved':
+                    return status == 'approved';
+                  case 'rejected':
+                    return status == 'rejected';
+                  default:
+                    return true;
+                }
+              }).toList();
+
+              // Apply search
               if (_searchQuery.isNotEmpty) {
                 docs = docs.where((doc) {
                   final data = doc.data() as Map<String, dynamic>;
@@ -58,6 +114,21 @@ class _AdminServicesScreenState extends State<AdminServicesScreen> {
                   return name.contains(_searchQuery) ||
                       address.contains(_searchQuery);
                 }).toList();
+              }
+
+              if (docs.isEmpty) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Text(
+                      _filter == 'pending'
+                          ? 'No pending service requests.'
+                          : 'No services found.',
+                      style: const TextStyle(color: Colors.grey),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                );
               }
 
               return ListView.builder(
@@ -82,6 +153,8 @@ class _AdminServicesScreenState extends State<AdminServicesScreen> {
     final mobile = data['mobile'] ?? '—';
     final isClosed = data['isClosed'] as bool? ?? false;
     final isDisabled = data['isDisabled'] as bool? ?? false;
+    final isApproved = data['isApproved'] as bool? ?? false;
+    final approvalStatus = data['approvalStatus'] as String? ?? (isApproved ? 'approved' : 'pending');
     final ownerName = data['ownerName'] ?? '—';
     final types =
         (data['tiffinTypes'] as List<dynamic>?)?.cast<String>() ?? [];
@@ -115,6 +188,20 @@ class _AdminServicesScreenState extends State<AdminServicesScreen> {
                 ),
                 Column(
                   children: [
+                    // Approval status badge
+                    _buildBadge(
+                      approvalStatus == 'approved'
+                          ? 'Approved'
+                          : approvalStatus == 'rejected'
+                              ? 'Rejected'
+                              : 'Pending',
+                      approvalStatus == 'approved'
+                          ? Colors.green
+                          : approvalStatus == 'rejected'
+                              ? Colors.red
+                              : Colors.orange,
+                    ),
+                    const SizedBox(height: 4),
                     if (isClosed)
                       _buildBadge('Closed', Colors.red),
                     if (isDisabled)
@@ -122,8 +209,6 @@ class _AdminServicesScreenState extends State<AdminServicesScreen> {
                         padding: const EdgeInsets.only(top: 4),
                         child: _buildBadge('Disabled', Colors.grey),
                       ),
-                    if (!isClosed && !isDisabled)
-                      _buildBadge('Active', Colors.green),
                   ],
                 ),
               ],
@@ -157,6 +242,31 @@ class _AdminServicesScreenState extends State<AdminServicesScreen> {
               spacing: 8,
               runSpacing: 8,
               children: [
+                // Approve / Reject buttons for pending services
+                if (approvalStatus != 'approved')
+                  OutlinedButton.icon(
+                    onPressed: () => _approveRejectService(docId, true),
+                    icon: const Icon(Icons.check_circle, size: 16, color: Colors.green),
+                    label: const Text('Approve',
+                        style: TextStyle(color: Colors.green, fontSize: 12)),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: Colors.green.withOpacity(0.5)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                if (approvalStatus != 'rejected')
+                  OutlinedButton.icon(
+                    onPressed: () => _approveRejectService(docId, false),
+                    icon: const Icon(Icons.cancel, size: 16, color: Colors.orange),
+                    label: const Text('Reject',
+                        style: TextStyle(color: Colors.orange, fontSize: 12)),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: Colors.orange.withOpacity(0.5)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
                 OutlinedButton.icon(
                   onPressed: () => _toggleDisabled(docId, isDisabled),
                   icon: Icon(
@@ -239,6 +349,48 @@ class _AdminServicesScreenState extends State<AdminServicesScreen> {
             content: Text(currentlyDisabled
                 ? 'Service enabled.'
                 : 'Service disabled.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  /// Approve or reject a tiffin service — also syncs to seller_register
+  Future<void> _approveRejectService(String docId, bool approve) async {
+    try {
+      final statusStr = approve ? 'approved' : 'rejected';
+
+      // Update tiffin_services
+      await FirebaseFirestore.instance
+          .collection('tiffin_services')
+          .doc(docId)
+          .update({'isApproved': approve, 'approvalStatus': statusStr});
+
+      // Also update seller_register
+      final sellerDoc = await FirebaseFirestore.instance
+          .collection('seller_register')
+          .doc(docId)
+          .get();
+      if (sellerDoc.exists) {
+        await FirebaseFirestore.instance
+            .collection('seller_register')
+            .doc(docId)
+            .update({'isApproved': approve, 'approvalStatus': statusStr});
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(approve
+                ? 'Service approved. Seller can now proceed.'
+                : 'Service rejected. Seller cannot proceed.'),
             backgroundColor: Colors.green,
           ),
         );

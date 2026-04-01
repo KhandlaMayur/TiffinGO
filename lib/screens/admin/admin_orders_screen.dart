@@ -104,10 +104,15 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
 
   Widget _buildOrderCard(String docId, Map<String, dynamic> data) {
     final status = (data['status'] ?? 'pending').toString();
-    final total = data['totalPrice'] ?? data['total'] ?? 0;
-    final userContact = data['userContact'] ?? data['userId'] ?? '—';
+    // Use amount/originalAmount (actual order fields)
+    final amount = (data['amount'] as num?)?.toDouble() ?? 0;
+    final originalAmount = (data['originalAmount'] as num?)?.toDouble();
+    final displayPrice = (amount > 0) ? amount : (originalAmount ?? 0);
+    final userName = data['userName'] as String?;
+    final userId = data['userId'] as String?;
     final serviceName = data['serviceName'] ?? data['tiffineService'] ?? '—';
-    final items = data['items'] ?? data['mealPlan'] ?? '—';
+    final mealPlan = data['mealPlan'] ?? '—';
+    final paymentMethod = data['paymentMethod'] ?? '—';
     final createdAt = data['createdAt'] as Timestamp?;
     final dateStr = createdAt != null
         ? '${createdAt.toDate().day}/${createdAt.toDate().month}/${createdAt.toDate().year}'
@@ -163,16 +168,28 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
               ],
             ),
             const SizedBox(height: 8),
-            _infoRow('User', userContact.toString()),
             _infoRow('Service', serviceName.toString()),
-            _infoRow('Items', items.toString()),
+            _infoRow('Meal Plan', mealPlan.toString()),
+            _infoRow('Payment', paymentMethod.toString()),
             _infoRow('Date', dateStr),
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
+                // Show user name
+                Expanded(
+                  child: (userName != null && userName.isNotEmpty)
+                      ? Text(
+                          'User: $userName',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w500, fontSize: 13),
+                          overflow: TextOverflow.ellipsis,
+                        )
+                      : _buildUserNameWidget(userId),
+                ),
+                const SizedBox(height: 8),
                 Text(
-                  '₹${(total is num) ? total.toStringAsFixed(0) : total}',
+                  '₹${(displayPrice is num) ? (displayPrice as num).toStringAsFixed(0) : displayPrice}',
                   style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 20,
@@ -263,5 +280,31 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
         );
       }
     }
+  }
+
+  /// Fetches user name from user_register for display
+  Widget _buildUserNameWidget(String? userId) {
+    if (userId == null || userId.isEmpty || userId == 'anonymous') {
+      return Text('User: Unknown',
+          style: TextStyle(color: Colors.grey[600], fontSize: 13));
+    }
+    return FutureBuilder<DocumentSnapshot>(
+      future: FirebaseFirestore.instance
+          .collection('user_register')
+          .doc(userId)
+          .get(),
+      builder: (context, snap) {
+        if (!snap.hasData || !snap.data!.exists) {
+          return Text('User: $userId',
+              style: TextStyle(color: Colors.grey[600], fontSize: 13),
+              overflow: TextOverflow.ellipsis);
+        }
+        final data = snap.data!.data() as Map<String, dynamic>?;
+        final name = data?['name'] ?? data?['fullName'] ?? userId;
+        return Text('User: $name',
+            style: TextStyle(color: Colors.grey[600], fontSize: 13),
+            overflow: TextOverflow.ellipsis);
+      },
+    );
   }
 }

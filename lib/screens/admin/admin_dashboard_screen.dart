@@ -79,38 +79,70 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 children: [
                   SizedBox(
                     width: cardWidth,
-                    child: _buildStatCard('Total Users', Icons.people,
-                        Colors.blue, _streamCount('user_register')),
+                    child: GestureDetector(
+                      onTap: () => setState(() => _selectedIndex = 2),
+                      child: _buildStatCard('Total Users', Icons.people,
+                          Colors.blue, _streamCount('user_register')),
+                    ),
                   ),
                   SizedBox(
                     width: cardWidth,
-                    child: _buildStatCard('Total Sellers', Icons.store,
-                        Colors.green, _streamCount('seller_register')),
+                    child: GestureDetector(
+                      onTap: () => setState(() => _selectedIndex = 1),
+                      child: _buildStatCard('Total Sellers', Icons.store,
+                          Colors.green, _streamCount('seller_register')),
+                    ),
                   ),
                   SizedBox(
                     width: cardWidth,
-                    child: _buildStatCard('Active Services', Icons.room_service,
-                        Colors.orange, _streamCount('tiffin_services')),
+                    child: GestureDetector(
+                      onTap: () => setState(() => _selectedIndex = 3),
+                      child: _buildStatCard('Active Services', Icons.room_service,
+                          Colors.orange, _streamCount('tiffin_services')),
+                    ),
                   ),
                   SizedBox(
                     width: cardWidth,
-                    child: _buildStatCard('Total Orders', Icons.receipt_long,
-                        Colors.purple, _streamCount('orders')),
+                    child: GestureDetector(
+                      onTap: () => setState(() => _selectedIndex = 4),
+                      child: _buildStatCard('Total Orders', Icons.receipt_long,
+                          Colors.purple, _streamCount('orders')),
+                    ),
                   ),
                   SizedBox(
                     width: cardWidth,
-                    child: _buildStatCard('Subscriptions', Icons.card_membership,
-                        Colors.teal, _streamCount('subscriptions')),
+                    child: GestureDetector(
+                      onTap: () => setState(() => _selectedIndex = 4),
+                      child: _buildStatCard('Subscriptions', Icons.card_membership,
+                          Colors.teal, _streamCount('subscriptions')),
+                    ),
                   ),
                   SizedBox(
                     width: cardWidth,
-                    child: _buildStatCard('Complaints', Icons.report_problem,
-                        Colors.red, _streamCount('complaints')),
+                    child: GestureDetector(
+                      onTap: () => setState(() => _selectedIndex = 5),
+                      child: _buildStatCard('Complaints', Icons.report_problem,
+                          Colors.red, _streamCount('complaints')),
+                    ),
                   ),
                 ],
               );
             },
           ),
+
+          const SizedBox(height: 24),
+
+          // Pending Service Requests
+          const Text(
+            'Pending Service Requests',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: _navy,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _buildPendingRequests(),
 
           const SizedBox(height: 24),
 
@@ -128,6 +160,111 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildPendingRequests() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('tiffin_services')
+          .where('approvalStatus', isEqualTo: 'pending')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+
+        if (docs.isEmpty) {
+          return const Text('No pending service requests.',
+              style: TextStyle(color: Colors.grey));
+        }
+
+        return Column(
+          children: docs.map((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            final name = data['serviceName'] ?? 'Unnamed Service';
+            final ownerName = data['ownerName'] ?? 'Unknown Seller';
+
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Colors.orange.withOpacity(0.1),
+                  child: const Icon(Icons.pending_actions, color: Colors.orange),
+                ),
+                title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text('by $ownerName'),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Approve quickly from dashboard
+                    IconButton(
+                      icon: const Icon(Icons.check_circle, color: Colors.green),
+                      tooltip: 'Approve',
+                      onPressed: () => _quickApprove(doc.id, true),
+                    ),
+                    // Reject quickly from dashboard
+                    IconButton(
+                      icon: const Icon(Icons.cancel, color: Colors.red),
+                      tooltip: 'Reject',
+                      onPressed: () => _quickApprove(doc.id, false),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        // Navigate to Services tab for full review
+                        setState(() => _selectedIndex = 3);
+                      },
+                      child: const Text('Review', style: TextStyle(color: _navy)),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  /// Quick approve/reject a tiffin service from the dashboard
+  Future<void> _quickApprove(String docId, bool approve) async {
+    final statusStr = approve ? 'approved' : 'rejected';
+    try {
+      await FirebaseFirestore.instance
+          .collection('tiffin_services')
+          .doc(docId)
+          .update({'isApproved': approve, 'approvalStatus': statusStr});
+
+      // Also sync to seller_register if document exists
+      final sellerDoc = await FirebaseFirestore.instance
+          .collection('seller_register')
+          .doc(docId)
+          .get();
+      if (sellerDoc.exists) {
+        await sellerDoc.reference
+            .update({'isApproved': approve, 'approvalStatus': statusStr});
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(approve
+                ? 'Service approved! Seller can now proceed.'
+                : 'Service rejected.'),
+            backgroundColor: approve ? Colors.green : Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   Stream<int> _streamCount(String collection) {
@@ -227,12 +364,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           children: snapshot.data!.docs.map((doc) {
             final data = doc.data() as Map<String, dynamic>;
             final status = data['status'] ?? 'pending';
-            final total = data['totalPrice'] ?? data['total'] ?? 0;
-            final userId = data['userId'] ?? data['userContact'] ?? '—';
+            // Use amount/originalAmount (actual order fields)
+            final amount = (data['amount'] as num?)?.toDouble() ?? 0;
+            final originalAmount = (data['originalAmount'] as num?)?.toDouble();
+            final displayPrice = (amount > 0) ? amount : (originalAmount ?? 0);
+            final userName = data['userName'] as String?;
+            final userId = data['userId'] as String?;
 
             Color statusColor;
             switch (status.toString().toLowerCase()) {
               case 'completed':
+              case 'delivered':
                 statusColor = Colors.green;
                 break;
               case 'cancelled':
@@ -265,12 +407,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             style: const TextStyle(
                                 fontWeight: FontWeight.w600, fontSize: 14),
                           ),
-                          Text(
-                            'User: $userId',
-                            style: TextStyle(
-                                color: Colors.grey[600], fontSize: 12),
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                          // Show user name (fetched from order or from user_register)
+                          (userName != null && userName.isNotEmpty)
+                              ? Text(
+                                  'User: $userName',
+                                  style: TextStyle(
+                                      color: Colors.grey[600], fontSize: 12),
+                                  overflow: TextOverflow.ellipsis,
+                                )
+                              : _buildUserNameWidget(userId),
                         ],
                       ),
                     ),
@@ -280,7 +425,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          '₹${(total is num) ? total.toStringAsFixed(0) : total}',
+                          '₹${(displayPrice is num) ? (displayPrice as num).toStringAsFixed(0) : displayPrice}',
                           style: const TextStyle(
                               fontWeight: FontWeight.bold, fontSize: 14),
                         ),
@@ -313,9 +458,48 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
+  /// Fetches user name from user_register for display
+  Widget _buildUserNameWidget(String? userId) {
+    if (userId == null || userId.isEmpty || userId == 'anonymous') {
+      return Text('User: Unknown',
+          style: TextStyle(color: Colors.grey[600], fontSize: 12));
+    }
+    return FutureBuilder<DocumentSnapshot>(
+      future: FirebaseFirestore.instance
+          .collection('user_register')
+          .doc(userId)
+          .get(),
+      builder: (context, snap) {
+        if (!snap.hasData || !snap.data!.exists) {
+          return Text('User: $userId',
+              style: TextStyle(color: Colors.grey[600], fontSize: 12),
+              overflow: TextOverflow.ellipsis);
+        }
+        final data = snap.data!.data() as Map<String, dynamic>?;
+        final name = data?['name'] ?? data?['fullName'] ?? userId;
+        return Text('User: $name',
+            style: TextStyle(color: Colors.grey[600], fontSize: 12),
+            overflow: TextOverflow.ellipsis);
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        if (_selectedIndex != 0) {
+          // Go back to dashboard tab first
+          setState(() => _selectedIndex = 0);
+        } else {
+          // On dashboard tab: go to login
+          Navigator.of(context)
+              .pushNamedAndRemoveUntil('/login', (route) => false);
+        }
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: Text(_navItems[_selectedIndex].label),
         backgroundColor: _navy,
@@ -408,6 +592,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ),
       ),
       body: _buildBody(),
+    ),
     );
   }
 }

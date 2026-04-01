@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class AdminUsersScreen extends StatefulWidget {
   const AdminUsersScreen({super.key});
@@ -136,10 +137,28 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
               ],
             ),
             const SizedBox(height: 8),
-            Text('📞 $phone',
-                style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+            // Tappable phone number → opens phone dialer
+            GestureDetector(
+              onTap: () {
+                final phoneNum = phone.toString().replaceAll(RegExp(r'[^\d+]'), '');
+                if (phoneNum.isNotEmpty) {
+                  launchUrl(Uri.parse('tel:$phoneNum'));
+                }
+              },
+              child: Text(
+                '📞 $phone',
+                style: TextStyle(
+                  color: Colors.blue[700],
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
             const SizedBox(height: 12),
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 OutlinedButton.icon(
                   onPressed: () => _toggleBlock(docId, isBlocked),
@@ -164,7 +183,6 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                         borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
-                const SizedBox(width: 8),
                 OutlinedButton.icon(
                   onPressed: () => _viewOrderHistory(docId, data),
                   icon: const Icon(Icons.history, size: 16, color: _navy),
@@ -194,7 +212,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-                currentlyBlocked ? 'User unblocked.' : 'User blocked.'),
+                currentlyBlocked ? 'User unblocked successfully.' : 'User blocked successfully. User cannot login until unblocked.'),
             backgroundColor: Colors.green,
           ),
         );
@@ -210,7 +228,6 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
 
   void _viewOrderHistory(String userId, Map<String, dynamic> userData) {
     final userName = userData['name'] ?? 'User';
-    final userContact = userData['phone'] ?? userData['email'] ?? '';
 
     showModalBottomSheet(
       context: context,
@@ -240,7 +257,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                   child: StreamBuilder<QuerySnapshot>(
                     stream: FirebaseFirestore.instance
                         .collection('orders')
-                        .where('userContact', isEqualTo: userContact)
+                        .where('userId', isEqualTo: userId)
                         .orderBy('createdAt', descending: true)
                         .snapshots(),
                     builder: (context, snapshot) {
@@ -248,29 +265,9 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                         return const Center(
                             child: CircularProgressIndicator());
                       }
-
-                      // Also try userId-based query
                       if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                        return StreamBuilder<QuerySnapshot>(
-                          stream: FirebaseFirestore.instance
-                              .collection('orders')
-                              .where('userId', isEqualTo: userId)
-                              .orderBy('createdAt', descending: true)
-                              .snapshots(),
-                          builder: (ctx2, snap2) {
-                            if (snap2.connectionState ==
-                                ConnectionState.waiting) {
-                              return const Center(
-                                  child: CircularProgressIndicator());
-                            }
-                            if (!snap2.hasData || snap2.data!.docs.isEmpty) {
-                              return const Center(
-                                  child: Text('No orders found.'));
-                            }
-                            return _buildOrderList(
-                                snap2.data!.docs, scrollController);
-                          },
-                        );
+                        return const Center(
+                            child: Text('No orders found.'));
                       }
                       return _buildOrderList(
                           snapshot.data!.docs, scrollController);
@@ -294,15 +291,81 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
       itemBuilder: (_, i) {
         final data = docs[i].data() as Map<String, dynamic>;
         final status = data['status'] ?? 'pending';
-        final total = data['totalPrice'] ?? data['total'] ?? 0;
+        // Use correct amount fields
+        final amount = (data['amount'] as num?)?.toDouble() ?? 0;
+        final originalAmount = (data['originalAmount'] as num?)?.toDouble();
+        final displayPrice = (amount > 0) ? amount : (originalAmount ?? 0);
+        final serviceName = data['serviceName'] ?? '—';
+        final mealPlan = data['mealPlan'] ?? '';
+        final paymentMethod = data['paymentMethod'] ?? '';
+
+        Color statusColor;
+        switch (status.toString().toLowerCase()) {
+          case 'delivered':
+          case 'completed':
+            statusColor = Colors.green;
+            break;
+          case 'cancelled':
+            statusColor = Colors.red;
+            break;
+          default:
+            statusColor = Colors.orange;
+        }
+
         return Card(
-          margin: const EdgeInsets.only(bottom: 8),
-          child: ListTile(
-            title: Text('Order #${docs[i].id.substring(0, 8)}'),
-            subtitle: Text('Status: $status'),
-            trailing: Text(
-                '₹${(total is num) ? total.toStringAsFixed(0) : total}',
-                style: const TextStyle(fontWeight: FontWeight.bold)),
+          margin: const EdgeInsets.only(bottom: 10),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Order #${docs[i].id.substring(0, 8)}',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: statusColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        status.toString().toUpperCase(),
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text('Service: $serviceName',
+                    style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                if (mealPlan.toString().isNotEmpty)
+                  Text('Meal Plan: $mealPlan',
+                      style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                if (paymentMethod.toString().isNotEmpty)
+                  Text('Payment: $paymentMethod',
+                      style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                const SizedBox(height: 4),
+                Text(
+                  '₹${(displayPrice is num) ? (displayPrice as num).toStringAsFixed(0) : displayPrice}',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: _navy),
+                ),
+              ],
+            ),
           ),
         );
       },

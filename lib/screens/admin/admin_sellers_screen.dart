@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class AdminSellersScreen extends StatefulWidget {
   const AdminSellersScreen({super.key});
@@ -82,7 +83,7 @@ class _AdminSellersScreenState extends State<AdminSellersScreen> {
     final name = data['name'] ?? 'Unknown';
     final email = data['email'] ?? '—';
     final phone = data['phone'] ?? '—';
-    final isApproved = data['isApproved'] as bool? ?? true;
+    final isApproved = data['isApproved'] as bool? ?? false;
     final isDisabled = data['isDisabled'] as bool? ?? false;
 
     return Card(
@@ -134,8 +135,24 @@ class _AdminSellersScreenState extends State<AdminSellersScreen> {
               ],
             ),
             const SizedBox(height: 8),
-            Text('📞 $phone',
-                style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+            // Tappable phone number → opens phone dialer
+            GestureDetector(
+              onTap: () {
+                final phoneNum = phone.toString().replaceAll(RegExp(r'[^\d+]'), '');
+                if (phoneNum.isNotEmpty) {
+                  launchUrl(Uri.parse('tel:$phoneNum'));
+                }
+              },
+              child: Text(
+                '📞 $phone',
+                style: TextStyle(
+                  color: Colors.blue[700],
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
             const SizedBox(height: 12),
             // Action buttons
             Wrap(
@@ -147,20 +164,20 @@ class _AdminSellersScreenState extends State<AdminSellersScreen> {
                     'Approve',
                     Icons.check_circle,
                     Colors.green,
-                    () => _updateSellerField(docId, 'isApproved', true),
+                    () => _approveRejectSeller(docId, true),
                   ),
                 if (isApproved)
                   _actionButton(
                     'Reject',
                     Icons.cancel,
                     Colors.orange,
-                    () => _updateSellerField(docId, 'isApproved', false),
+                    () => _approveRejectSeller(docId, false),
                   ),
                 _actionButton(
                   isDisabled ? 'Enable' : 'Disable',
                   isDisabled ? Icons.check : Icons.block,
                   isDisabled ? Colors.green : Colors.red,
-                  () => _updateSellerField(docId, 'isDisabled', !isDisabled),
+                  () => _toggleSellerDisabled(docId, isDisabled),
                 ),
                 _actionButton(
                   'View Service',
@@ -206,25 +223,84 @@ class _AdminSellersScreenState extends State<AdminSellersScreen> {
     );
   }
 
-  Future<void> _updateSellerField(
-      String docId, String field, dynamic value) async {
+  /// Approve or reject seller — also updates tiffin_services isApproved
+  Future<void> _approveRejectSeller(String docId, bool approve) async {
     try {
+      final statusStr = approve ? 'approved' : 'rejected';
+      // Update seller_register
       await FirebaseFirestore.instance
           .collection('seller_register')
           .doc(docId)
-          .update({field: value});
+          .update({'isApproved': approve, 'approvalStatus': statusStr});
+
+      // Also update tiffin_services isApproved
+      final serviceDoc = await FirebaseFirestore.instance
+          .collection('tiffin_services')
+          .doc(docId)
+          .get();
+      if (serviceDoc.exists) {
+        await FirebaseFirestore.instance
+            .collection('tiffin_services')
+            .doc(docId)
+            .update({'isApproved': approve, 'approvalStatus': statusStr});
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('Seller $field updated.'),
-              backgroundColor: Colors.green),
+            content: Text(approve
+                ? 'Seller approved successfully. Seller service is now active.'
+                : 'Seller rejected. Seller cannot proceed until approved.'),
+            backgroundColor: Colors.green,
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  /// Toggle seller disabled — also updates tiffin_services isDisabled
+  Future<void> _toggleSellerDisabled(String docId, bool currentlyDisabled) async {
+    try {
+      final newValue = !currentlyDisabled;
+
+      // Update seller_register
+      await FirebaseFirestore.instance
+          .collection('seller_register')
+          .doc(docId)
+          .update({'isDisabled': newValue});
+
+      // Also update tiffin_services isDisabled
+      final serviceDoc = await FirebaseFirestore.instance
+          .collection('tiffin_services')
+          .doc(docId)
+          .get();
+      if (serviceDoc.exists) {
+        await FirebaseFirestore.instance
+            .collection('tiffin_services')
+            .doc(docId)
+            .update({'isDisabled': newValue});
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('Error: $e'), backgroundColor: Colors.red),
+            content: Text(currentlyDisabled
+                ? 'Seller is enabled. Service is now visible to users.'
+                : 'Seller is disabled. Service is hidden from users.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -264,6 +340,8 @@ class _AdminSellersScreenState extends State<AdminSellersScreen> {
               _detailRow('Mobile', serviceData['mobile'] ?? '—'),
               _detailRow('Jain/Veg', (serviceData['jainVeg'] == true) ? 'Yes' : 'No'),
               _detailRow('Is Closed', (serviceData['isClosed'] == true) ? 'Yes' : 'No'),
+              _detailRow('Is Approved', (serviceData['isApproved'] == true) ? 'Yes' : 'No'),
+              _detailRow('Is Disabled', (serviceData['isDisabled'] == true) ? 'Yes' : 'No'),
               if (serviceData['tiffinTypes'] != null)
                 _detailRow('Types', (serviceData['tiffinTypes'] as List).join(', ')),
               if (serviceData['prices'] != null)
